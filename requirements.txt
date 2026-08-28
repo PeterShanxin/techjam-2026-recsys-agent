@@ -1,0 +1,3 @@
+# Keep the base environment intentionally small.
+# The official KuaiRand starter kit only requires NumPy.
+numpy>=1.26,<3

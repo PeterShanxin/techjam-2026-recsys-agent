@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data - do not commit challenge datasets
+KuaiRand-Pure/
+**/KuaiRand-Pure/
+data/
+datasets/
+*.tar.gz
+
+# Experiments / model artifacts
+artifacts/
+outputs/
+runs/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.npy
+*.npz
+
+# Submission outputs
+submission.csv
+submissions/*.csv
+
+# Notebook state
+.ipynb_checkpoints/

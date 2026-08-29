@@ -6,7 +6,13 @@ Track 2 submission workspace for TikTok TechJam 2026.
 
 Build an autonomous research agent that can inspect a recommender-system task, propose hypotheses, modify experiment code, run and evaluate experiments, reflect on results, and iteratively improve the model with minimal human intervention.
 
-A planned extension is evolutionary experiment search: maintain several candidate research directions, select strong experiments, mutate promising configurations, and recombine compatible improvements while preserving diversity and compute efficiency.
+The architecture is an **LLM-guided evolutionary research system**:
+
+- The **Research Agent** owns semantic ML reasoning, hypothesis generation, meaningful mutation and conditional crossover proposals.
+- The **Evolution Controller** owns deterministic fitness, selection, elitism, diversity, lineage and resource-budget enforcement.
+- The evolutionary layer is intentionally lightweight and hypothesis-driven, not brute-force AutoML.
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the frozen responsibility split and staged V1-V3 design.
 
 ## Benchmark
 
@@ -41,10 +47,11 @@ tests/                       Automated tests
 
 1. Preserve the official evaluator and task definition.
 2. Make every experiment reproducible and machine-readable.
-3. Track hypothesis, code/config diff, metrics, runtime, token usage, and outcome.
+3. Track hypothesis, code/config diff, metrics, runtime, token usage, lineage and outcome.
 4. Prefer autonomous research decisions over manual intervention.
-5. Use evolutionary search only where it improves search quality - not as brute-force hyperparameter tuning.
-6. Optimize for the official ranking metrics and compute efficiency.
+5. Let the LLM propose meaningful semantic changes; keep selection and budgets deterministic.
+6. Use evolutionary search only where it improves search quality - not as brute-force hyperparameter tuning.
+7. Optimize for the official ranking metrics and compute efficiency.
 
 ## Quick start
 
@@ -61,10 +68,12 @@ The dataset is intentionally not committed. See `starter/kuairand/README.md` for
 
 - [x] Track selected
 - [x] Official starter kit preserved
+- [x] Freeze Research Agent vs Evolution Controller responsibility split
 - [ ] Reproduce official FM baseline
-- [ ] Define experiment schema and registry
-- [ ] Implement autonomous research loop
-- [ ] Add evolutionary experiment search
+- [ ] Define exact experiment schema and registry
+- [ ] Implement sequential autonomous research loop
+- [ ] Add evolutionary branching
+- [ ] Add semantic crossover
 - [ ] Run controlled benchmark experiments
 - [ ] Generate final submission checkpoint and CSV
 - [ ] Record 3-minute demo

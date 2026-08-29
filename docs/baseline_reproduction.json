@@ -1,0 +1,71 @@
+{
+  "phase": 1,
+  "status": "PASS",
+  "evaluate_py_sha256": "735b429e6223572ecb48c0f44953b0fbc39b9f6e4e7a1e9b06326d7fe0d0f58c",
+  "evaluate_py_bytes": 2593,
+  "evaluate_py_modified": false,
+  "organizer_patches": [],
+  "environment": {
+    "os": "Windows 11 (build 26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "architecture": "ARM64",
+    "python": "3.14.2",
+    "python_implementation": "CPython",
+    "pip": "26.2.1",
+    "numpy": "2.5.2",
+    "pytest": "9.1.1"
+  },
+  "dataset": {
+    "name": "KuaiRand-Pure",
+    "source": "https://zenodo.org/records/10439422/files/KuaiRand-Pure.tar.gz",
+    "archive_md5": "0820331067a3784d9691136f772b35a7",
+    "default_data_dir": "starter/kuairand/KuaiRand-Pure/data",
+    "split_sizes": {
+      "train": 1141112,
+      "valid": 124909,
+      "test": 170588
+    },
+    "date_ranges": {
+      "train": {"min": 20220409, "max": 20220421, "advertised_lo": 20220408},
+      "valid": {"min": 20220422, "max": 20220428},
+      "test": {"min": 20220429, "max": 20220508}
+    },
+    "test_user_video_pairs": {
+      "rows": 170588,
+      "unique_pairs": 165361,
+      "duplicate_pairs": 5133,
+      "max_repeat": 12,
+      "duplicate_pair_pct": 3.1
+    }
+  },
+  "results": {
+    "random": {
+      "seed": 0,
+      "command": ".venv\\Scripts\\python.exe baseline.py --model random --seed 0 --data_dir ./KuaiRand-Pure/data",
+      "cwd": "starter/kuairand",
+      "wall_seconds": 8.346,
+      "valid": {"GAUC": 0.4990, "nDCG@5": 0.4663, "primary": 0.4827},
+      "test": {"GAUC": 0.4999, "nDCG@5": 0.4514, "primary": 0.4757}
+    },
+    "fm": {
+      "seed": 0,
+      "command": ".venv\\Scripts\\python.exe baseline.py --model fm --seed 0 --data_dir ./KuaiRand-Pure/data",
+      "cwd": "starter/kuairand",
+      "wall_seconds": 79.22,
+      "early_stop_epoch": 11,
+      "config": {"k": 16, "lr": 0.001, "batch": 8192, "max_epochs": 40, "patience": 4},
+      "valid": {"GAUC": 0.6671, "nDCG@5": 0.5358, "primary": 0.6015},
+      "test": {"GAUC": 0.6621, "nDCG@5": 0.5286, "primary": 0.5953}
+    }
+  },
+  "reference": {
+    "random_test_primary": 0.4753,
+    "random_primary_tolerance": 0.001,
+    "fm_test": {"GAUC": 0.6610, "nDCG@5": 0.5282, "primary": 0.5946},
+    "fm_seed_std": 0.0008,
+    "notes": {
+      "random": "test primary 0.4757 is +0.0004 from 0.4753, inside ±0.001",
+      "fm": "seed 0 primary 0.5953 is +0.0007 from published 5-seed mean 0.5946 (~0.9σ)"
+    }
+  }
+}

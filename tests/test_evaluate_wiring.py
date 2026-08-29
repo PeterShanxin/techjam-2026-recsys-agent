@@ -6,12 +6,12 @@ import math
 
 import pytest
 
-from conftest import EVALUATE_PY, EVALUATE_SHA256
+from conftest import EVALUATE_SHA256, evaluate_py_canonical_bytes
 from evaluate import evaluate
 
 
 def test_evaluate_py_bytes_unchanged():
-    digest = hashlib.sha256(EVALUATE_PY.read_bytes()).hexdigest()
+    digest = hashlib.sha256(evaluate_py_canonical_bytes()).hexdigest()
     assert digest == EVALUATE_SHA256
 
 

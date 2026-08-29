@@ -11,7 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STARTER = ROOT / "starter" / "kuairand"
 DEFAULT_DATA_DIR = STARTER / "KuaiRand-Pure" / "data"
 EVALUATE_PY = STARTER / "evaluate.py"
-EVALUATE_SHA256 = "735b429e6223572ecb48c0f44953b0fbc39b9f6e4e7a1e9b06326d7fe0d0f58c"
+# SHA-256 of the committed LF blob. Normalize CRLF so Windows autocrlf checkouts match.
+EVALUATE_SHA256 = "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de"
+
+
+def evaluate_py_canonical_bytes() -> bytes:
+    return EVALUATE_PY.read_bytes().replace(b"\r\n", b"\n")
 
 if str(STARTER) not in sys.path:
     sys.path.insert(0, str(STARTER))

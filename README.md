@@ -58,18 +58,18 @@ tests/                       Automated tests
 Python 3.9+ is required by the official starter kit.
 
 ```bash
-python starter/kuairand/baseline.py --model random
-python starter/kuairand/baseline.py --model fm
+python scripts/run_baseline.py --model random --seed 0
+python scripts/run_baseline.py --model fm --seed 0
 ```
 
-The dataset is intentionally not committed. See `starter/kuairand/README.md` for the official download instructions.
+The dataset is intentionally not committed. See `starter/kuairand/README.md` for download instructions and [`docs/BASELINE_REPRODUCTION.md`](docs/BASELINE_REPRODUCTION.md) for the Phase 1 reproduction record.
 
 ## Status
 
 - [x] Track selected
 - [x] Official starter kit preserved
 - [x] Freeze Research Agent vs Evolution Controller responsibility split
-- [ ] Reproduce official FM baseline
+- [x] Reproduce official FM baseline
 - [ ] Define exact experiment schema and registry
 - [ ] Implement sequential autonomous research loop
 - [ ] Add evolutionary branching

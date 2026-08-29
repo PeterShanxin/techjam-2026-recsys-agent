@@ -31,6 +31,9 @@ datasets/
 artifacts/
 outputs/
 runs/
+*.sqlite
+*.sqlite3
+*.db
 checkpoints/
 *.ckpt
 *.pt

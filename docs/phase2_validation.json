@@ -1,0 +1,30 @@
+{
+  "phase": 2,
+  "status": "PASS",
+  "command": ".venv\\Scripts\\python.exe scripts\\run_experiment.py --spec configs\\experiments\\random_valid.json",
+  "experiment_id": "random-valid-seed0",
+  "origin": "baseline",
+  "evaluation_split": "valid",
+  "seed": 0,
+  "status_run": "success",
+  "metrics": {
+    "GAUC": 0.4990,
+    "nDCG@5": 0.4663,
+    "primary": 0.4827
+  },
+  "wall_seconds": 9.727,
+  "run_dir": "runs/random-valid-seed0",
+  "evaluate_py_sha256": "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de",
+  "evaluate_py_modified": false,
+  "notes": {
+    "candidate": "src/research_agent/recommenders/random_scorer.py",
+    "match_phase1_valid_random": "GAUC/nDCG@5/primary match docs/BASELINE_REPRODUCTION.md random valid seed 0",
+    "registry_after_demo": {
+      "count": 3,
+      "ids": ["random-valid-seed0", "random-valid-seed0-rerun", "random-valid-seed0-child"],
+      "spec_hash_hits": ["random-valid-seed0", "random-valid-seed0-rerun"],
+      "elite": "random-valid-seed0",
+      "child_ancestry": ["random-valid-seed0"]
+    }
+  }
+}

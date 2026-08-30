@@ -120,9 +120,11 @@ class ResearchAgent:
             report_path=research_dir / "report.md",
             summary_path=research_dir / "summary.json",
         )
+        self._root_outcome: IterationOutcome | None = None
+        self._prior_wall_seconds = 0.0
 
     def run(self) -> ResearchRun:
-        started = time.perf_counter()
+        started = time.perf_counter() - float(self._prior_wall_seconds or 0.0)
         root: IterationOutcome | None = None
         outcomes: list[IterationOutcome] = []
         try:
@@ -160,6 +162,8 @@ class ResearchAgent:
             raise
 
     def ensure_root(self) -> IterationOutcome:
+        if self._root_outcome is not None:
+            return self._root_outcome
         usable = find_usable_root(self.runner.registry, self.root_spec.experiment_id)
         if usable is not None and usable.result is not None:
             result = usable.result
@@ -191,6 +195,7 @@ class ResearchAgent:
         outcome.record = self._trace_record(outcome, usages=[], iteration=0)
         self.trace.append(outcome.record)
         self._emit_iteration(outcome)
+        self._root_outcome = outcome
         return outcome
 
     def _run_iteration(self, iteration: int, started: float) -> IterationOutcome:

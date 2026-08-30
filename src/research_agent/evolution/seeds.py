@@ -1,6 +1,8 @@
 """Reproducible Phase 4 seed: verified 3-seed FM bagging winner."""
 from __future__ import annotations
 
+import time
+from types import SimpleNamespace
 from typing import Any
 
 from research_agent.agent.constants import FM_ROOT_ID, FM_ROOT_PARAMETERS
@@ -47,21 +49,45 @@ def ensemble_seed_spec(
 
 
 def ensure_prior_spec(runner: Any, spec: ExperimentSpec) -> Any:
-    """Run a prior seed if missing. Does not consume sequential iteration budget."""
+    """Run a prior seed if missing. Does not consume sequential iteration budget.
+
+    Always return an object with ``spec`` and ``result``. If the id already exists
+    without a stored result and the incoming spec hash collides, keep the
+    ``runner.run()`` collision result instead of assuming the registry row is complete.
+    """
     existing = runner.registry.peek(spec.experiment_id)
     if existing is not None and existing.result is not None:
         return existing
-    runner.run(spec)
-    return runner.registry.get(spec.experiment_id)
+    result = runner.run(spec)
+    if result is None:
+        raise RuntimeError(f"prior {spec.experiment_id} produced no result")
+    entry = runner.registry.peek(spec.experiment_id)
+    if entry is not None and entry.result is not None:
+        return entry
+    spec_used = existing.spec if existing is not None else spec
+    return SimpleNamespace(spec=spec_used, result=result)
 
 
 def ensure_matched_starting_seeds(agent: Any, *, ensemble_spec: ExperimentSpec | None = None) -> tuple[Any, Any]:
-    """Give sequential search the same Generation-0 priors as evolution: FM root + ensemble."""
+    """Give sequential search the same Generation-0 priors as evolution: FM root + ensemble.
+
+    Priors are not new evaluations. Their wall time is folded into ``agent.run()``
+    via ``_prior_wall_seconds`` so matched ``--wall-clock`` budgets stay fair.
+    """
+    started = time.perf_counter()
     root = agent.ensure_root()
     if not is_usable_root_result(root.result):
         raise UnusableRootError(
             f"research root {root.experiment_id} is not a successful validation result"
         )
     spec = ensemble_spec or ensemble_seed_spec(parent_id=root.experiment_id)
+    existing = agent.runner.registry.peek(spec.experiment_id)
+    reused = existing is not None and existing.result is not None
     seed = ensure_prior_spec(agent.runner, spec)
+    if seed.result is None:
+        raise RuntimeError(f"prior {spec.experiment_id} has no result")
+    if not reused:
+        agent.ledger.add_experiment(status=seed.result.status, wall_seconds=seed.result.wall_seconds)
+    prior = float(getattr(agent, "_prior_wall_seconds", 0.0) or 0.0)
+    agent._prior_wall_seconds = prior + (time.perf_counter() - started)
     return root, seed

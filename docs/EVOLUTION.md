@@ -74,7 +74,7 @@ Intended production model remains `gemini-3.7-flash`. Pass `--model` explicitly 
 
 Traces: `runs/evolution/<session>/summary.json`, `population.json`, `generations.jsonl`, `tree.txt`. Lineage export is **session-scoped**: the registry stays the global source of truth; `tree.txt` includes the current session plus required seed ancestors only.
 
-Matched sequential control is a Phase-3-style sequential search with the **same Generation-0 priors** as evolution (`fm-root` + verified `fm-ensemble-3seed`) and the same number of **new** evaluations. The ensemble seed is prior knowledge; it does not consume the new-evaluation budget. Control uses an independent registry so it cannot see evolution-only children. Old unmatched FM-only sequential runs are not the benchmark.
+Matched sequential control is a Phase-3-style sequential search with the **same Generation-0 priors** as evolution (`fm-root` + verified `fm-ensemble-3seed`) and the same number of **new** evaluations. The ensemble seed is prior knowledge; it does not consume the new-evaluation budget. Prior seed wall-clock is still folded into sequential `run()` so `--wall-clock` stays fair versus evolution. Control uses an independent registry so it cannot see evolution-only children. Old unmatched FM-only sequential runs are not the benchmark.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_research_agent.py --model gemini-3.6-flash --thinking medium --iterations 6 --timeout 1800 --runs-dir runs\sequential-matched --with-ensemble-prior

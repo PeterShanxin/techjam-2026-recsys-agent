@@ -466,6 +466,8 @@ class EvolutionController:
         existing = self.agent.runner.registry.peek(spec.experiment_id)
         reused = existing is not None and existing.result is not None
         entry = ensure_prior_spec(self.agent.runner, spec)
+        if entry.result is None:
+            raise RuntimeError(f"prior {spec.experiment_id} has no result")
         if not reused:
             self.agent.ledger.add_experiment(
                 status=entry.result.status, wall_seconds=entry.result.wall_seconds

@@ -1,0 +1,130 @@
+{
+  "phase": 3,
+  "record": "live-validation",
+  "status": "PILOT_ONLY",
+  "research_integrity": "iteration 1 silently fell back to official FM when torch was missing; harness success is not valid BPR evidence",
+  "intended_model": "gemini-3.7-flash",
+  "live_model": "gemini-3.6-flash",
+  "thinking": "medium",
+  "automatic_fallback": false,
+  "vertex": false,
+  "why_not_3_7": {
+    "interactions": "HTTP 500 high-demand on POST /v1beta/interactions for gemini-3.7-flash",
+    "generateContent": "HTTP 503 high-demand on POST /v1beta/models/gemini-3.7-flash:generateContent",
+    "model_list": "same key listed models/gemini-3.7-flash",
+    "ai_studio_chat": "user-reported 3.7 Flash chat completed at the same time",
+    "control": "same key POST /v1beta/models/gemini-3.6-flash:generateContent returned HTTP 200"
+  },
+  "structured_smoke": {
+    "path": "GeminiProvider.generate + ResearchProposal schema (same as ResearchAgent)",
+    "model": "gemini-3.6-flash",
+    "thinking": "medium",
+    "status": "success",
+    "proposal_validated": true,
+    "latency_seconds": 8.722,
+    "transport_retries": 0,
+    "tokens": {
+      "input_tokens": 89,
+      "output_tokens": 428,
+      "thinking_tokens": 1082,
+      "cached_tokens": 0,
+      "total_tokens": 1599
+    },
+    "credential_leak": false
+  },
+  "session": {
+    "session_id": "rs-20260830T095957Z-c4eebeaf",
+    "command": ".venv\\Scripts\\python.exe scripts\\run_research_agent.py --iterations 3 --model gemini-3.6-flash --thinking medium",
+    "root_experiment_id": "fm-root",
+    "root_reused": true,
+    "manual_interventions": 0,
+    "candidate_edits": 0,
+    "research_wall_seconds": 396.633,
+    "local_traces": "runs/research/rs-20260830T095957Z-c4eebeaf/",
+    "best": {
+      "experiment_id": "fm-root",
+      "GAUC": 0.6671,
+      "nDCG@5": 0.5358,
+      "primary": 0.6015
+    },
+    "improvement_vs_fm": 0.0,
+    "resources": {
+      "llm_calls": 3,
+      "research_calls": 3,
+      "repair_calls": 0,
+      "smoke_calls": 0,
+      "input_tokens": 15313,
+      "output_tokens": 10992,
+      "thinking_tokens": 35095,
+      "cached_tokens": 0,
+      "total_tokens": 61400,
+      "llm_latency_seconds": 259.912,
+      "experiment_runtime_seconds": 124.414,
+      "completed_experiments": 2,
+      "failed_experiments": 1,
+      "transport_retries": 0
+    }
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "experiment_id": "rs-20260830T095957Z-c4eebeaf-001",
+      "parent_id": "fm-root",
+      "status": "success",
+      "hypothesis": "Replace pointwise BCE with within-user pairwise BPR on an FM.",
+      "mutation_summary": "PyTorch FM + BPR, with official FM fallback if torch is missing.",
+      "GAUC": 0.6671,
+      "nDCG@5": 0.5358,
+      "primary": 0.6015,
+      "delta_vs_parent": 0.0,
+      "tokens": {
+        "input_tokens": 4412,
+        "output_tokens": 3254,
+        "thinking_tokens": 10057,
+        "total_tokens": 17723
+      },
+      "note": "SEMANTIC NO-OP. Metrics match fm-root exactly. Candidate caught ImportError for torch and trained official FM, so BPR was not actually tested. Do not treat as positive or negative evidence for pairwise BPR."
+    },
+    {
+      "iteration": 2,
+      "experiment_id": "rs-20260830T095957Z-c4eebeaf-002",
+      "parent_id": "fm-root",
+      "status": "failed",
+      "hypothesis": "Replace shallow FM with DeepFM (FM + MLP over field embeddings).",
+      "mutation_summary": "DeepFM architecture on top of FM interactions.",
+      "error": "ModuleNotFoundError: No module named 'torch'",
+      "adapted_from_prior": "Reflection cited iteration 1 primary 0.6015 with no movement, then changed architecture instead of retrying the same BPR claim.",
+      "tokens": {
+        "input_tokens": 5253,
+        "output_tokens": 3403,
+        "thinking_tokens": 10268,
+        "total_tokens": 18924
+      }
+    },
+    {
+      "iteration": 3,
+      "experiment_id": "rs-20260830T095957Z-c4eebeaf-003",
+      "parent_id": "fm-root",
+      "status": "success",
+      "hypothesis": "Hybrid within-user BPR + pointwise BCE on FM.",
+      "mutation_summary": "BPR+BCE hybrid FM with AdamW and early stopping; no top-level torch import.",
+      "GAUC": 0.6629,
+      "nDCG@5": 0.5335,
+      "primary": 0.5982,
+      "delta_vs_parent": -0.0033,
+      "adapted_from_prior": "Kept fm-root as parent (elite unchanged). Avoided hard torch import after iteration 2 crash. Still pursued ranking-loss direction; did not diagnose iteration 1 silent FM fallback.",
+      "tokens": {
+        "input_tokens": 5648,
+        "output_tokens": 4335,
+        "thinking_tokens": 14770,
+        "total_tokens": 24753
+      }
+    }
+  ],
+  "tests": {
+    "command": ".venv\\Scripts\\python.exe -m pytest tests -q",
+    "result": "112 passed in 36.83s"
+  },
+  "evaluate_py_sha256": "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de",
+  "credential_leak": false
+}

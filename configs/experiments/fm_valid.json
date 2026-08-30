@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "experiment_id": "fm-root",
+  "parent_ids": [],
+  "hypothesis": "Official KuaiRand Factorization Machine is the research root.",
+  "rationale": "Phase 1 reproduced validation GAUC 0.6671, nDCG@5 0.5358, primary 0.6015.",
+  "origin": "baseline",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/fm_scorer.py",
+    "source_root": null,
+    "extra_paths": []
+  },
+  "parameters": {
+    "k": 16,
+    "lr": 0.001,
+    "epochs": 40,
+    "batch": 8192,
+    "patience": 4,
+    "l2": 1e-6
+  },
+  "seed": 0,
+  "evaluation_split": "valid",
+  "timeout_seconds": 900,
+  "allow_test_split": false,
+  "tags": ["phase3", "fm", "root"],
+  "notes": "Organizer-compatible FM candidate. Runner owns official metrics."
+}

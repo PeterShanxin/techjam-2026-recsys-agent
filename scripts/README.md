@@ -22,3 +22,12 @@ See [`docs/BASELINE_REPRODUCTION.md`](../docs/BASELINE_REPRODUCTION.md).
 ```
 
 `--allow-test` is required for `evaluation_split=test`. Details: [`docs/EXPERIMENT_HARNESS.md`](../docs/EXPERIMENT_HARNESS.md).
+
+## Research agent
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_research_agent.py --iterations 3 --model gemini-3.7-flash --thinking medium
+.\.venv\Scripts\python.exe scripts\run_gemini_smoke.py
+```
+
+Requires `GEMINI_API_KEY` in the process environment or repo-root `.env`. Unit tests use `FakeProvider` and spend no API money. Intended model is `gemini-3.7-flash`. First live validation used `--model gemini-3.6-flash` after Developer API 3.7 high-demand errors; see [`docs/RESEARCH_AGENT.md`](../docs/RESEARCH_AGENT.md).

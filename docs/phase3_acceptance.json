@@ -1,0 +1,103 @@
+{
+  "phase": 3,
+  "record": "integrity-acceptance",
+  "status": "PASS",
+  "intended_model": "gemini-3.7-flash",
+  "live_model": "gemini-3.6-flash",
+  "thinking": "medium",
+  "automatic_fallback": false,
+  "torch_installed": false,
+  "session_id": "rs-20260830T105206Z-2fb7f092",
+  "command": ".venv\\Scripts\\python.exe scripts\\run_research_agent.py --iterations 3 --model gemini-3.6-flash --thinking medium",
+  "local_traces": "runs/research/rs-20260830T105206Z-2fb7f092/",
+  "evaluate_py_sha256": "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de",
+  "tests": {
+    "command": ".venv\\Scripts\\python.exe -m pytest tests -q",
+    "result": "122 passed in 65.65s"
+  },
+  "best": {
+    "experiment_id": "rs-20260830T105206Z-2fb7f092-003",
+    "GAUC": 0.6681,
+    "nDCG@5": 0.5362,
+    "primary": 0.6021,
+    "delta_vs_fm": 0.0006
+  },
+  "resources": {
+    "llm_calls": 3,
+    "research_calls": 3,
+    "repair_calls": 0,
+    "input_tokens": 21889,
+    "output_tokens": 6809,
+    "thinking_tokens": 18597,
+    "total_tokens": 47295,
+    "research_wall_seconds": 413.316,
+    "manual_interventions": 0,
+    "candidate_edits": 0
+  },
+  "integrity": {
+    "unsupported_imports": "none in this session",
+    "silent_import_fallback": "none",
+    "repairs": 0,
+    "iter1_note": "Soft-label candidate trains official FM with y_soft. data.load returns tuples without is_like/play_time_ms, so extract_column returned None and y_soft equalled binary y. Execution succeeded and is not a torch/ImportError fallback, but the claimed label-shaping mechanism did not fire. Metrics matching FM are therefore unsurprising."
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "experiment_id": "rs-20260830T105206Z-2fb7f092-001",
+      "parent_id": "fm-root",
+      "status": "success",
+      "research_validity": "hypothesis_tested",
+      "mechanism_fired": false,
+      "hypothesis": "Soft labels from auxiliary behaviors and watch ratio.",
+      "implementation": "Official FM.step on y_soft; aux columns not present in data.load tuples.",
+      "dependencies": ["numpy", "baseline", "data", "evaluate", "stdlib"],
+      "GAUC": 0.6671,
+      "nDCG@5": 0.5358,
+      "primary": 0.6015,
+      "delta_vs_parent": 0.0,
+      "delta_vs_fm": 0.0,
+      "repair_calls": 0,
+      "tokens": {"input_tokens": 6660, "output_tokens": 2915, "thinking_tokens": 9719, "total_tokens": 19294},
+      "runtime_seconds": 51.943
+    },
+    {
+      "iteration": 2,
+      "experiment_id": "rs-20260830T105206Z-2fb7f092-002",
+      "parent_id": "fm-root",
+      "status": "success",
+      "research_validity": "hypothesis_tested",
+      "mechanism_fired": true,
+      "hypothesis": "Smaller batch 2048, lr=0.003, l2=1e-5, patience=8.",
+      "implementation": "Official FM with those hyperparameters.",
+      "dependencies": ["numpy", "baseline", "data", "evaluate", "stdlib"],
+      "GAUC": 0.6624,
+      "nDCG@5": 0.5335,
+      "primary": 0.5980,
+      "delta_vs_parent": -0.0035,
+      "delta_vs_fm": -0.0035,
+      "repair_calls": 0,
+      "tokens": {"input_tokens": 7422, "output_tokens": 1982, "thinking_tokens": 3728, "total_tokens": 13132},
+      "runtime_seconds": 58.986
+    },
+    {
+      "iteration": 3,
+      "experiment_id": "rs-20260830T105206Z-2fb7f092-003",
+      "parent_id": "fm-root",
+      "status": "success",
+      "research_validity": "hypothesis_tested",
+      "mechanism_fired": true,
+      "hypothesis": "Three-seed FM bagging, average scores.",
+      "implementation": "Train 3 official FM models with distinct seeds; mean predicted scores.",
+      "dependencies": ["numpy", "baseline", "data", "evaluate", "stdlib"],
+      "GAUC": 0.6681,
+      "nDCG@5": 0.5362,
+      "primary": 0.6021,
+      "delta_vs_parent": 0.0006,
+      "delta_vs_fm": 0.0006,
+      "repair_calls": 0,
+      "tokens": {"input_tokens": 7807, "output_tokens": 1912, "thinking_tokens": 5150, "total_tokens": 14869},
+      "runtime_seconds": 130.729
+    }
+  ],
+  "credential_leak": false
+}

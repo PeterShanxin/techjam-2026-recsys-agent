@@ -1,3 +1,4 @@
 # Keep the base environment intentionally small.
 # The official KuaiRand starter kit only requires NumPy.
+# Gemini uses stdlib urllib against the Interactions REST API.
 numpy>=1.26,<3

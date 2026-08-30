@@ -171,3 +171,51 @@ def test_competition_flag_uses_official_envelope(tmp_path, monkeypatch):
     assert config.convergence_patience == 3
     assert DummyAgent.max_iterations == 50
     assert DummyAgent.wall_clock_seconds == 21600.0
+
+
+def test_competition_sequential_control_inherits_wall(tmp_path, monkeypatch):
+    cli = _load_cli()
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    walls = []
+
+    class DummyElite:
+        experiment_id = "child-1"
+        fitness = 0.61
+        metrics = {"primary": 0.61}
+
+        def to_dict(self):
+            return {"experiment_id": self.experiment_id, "fitness": self.fitness}
+
+    class DummyRun:
+        stop_reason = "wall_clock_budget"
+        evaluated_offspring = 2
+        elites = [DummyElite()]
+        population = type("P", (), {"members": [type("M", (), {"status": "success"})()]})()
+        trace_dir = tmp_path
+        summary = {"lineage": "", "resources": {}}
+        all_members = [type("M", (), {"research_family": "ensemble"})()]
+
+    class DummyController:
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self):
+            return DummyRun()
+
+    class DummyAgent:
+        session_id = "ev-comp-seq"
+
+        def __init__(self, **kwargs):
+            walls.append(kwargs.get("wall_clock_seconds"))
+
+        def run(self):
+            return type("SR", (), {"summary": {"session_id": "seq-control"}})()
+
+    monkeypatch.setattr(cli, "ResearchAgent", DummyAgent)
+    monkeypatch.setattr(cli, "EvolutionController", DummyController)
+    monkeypatch.setattr(cli, "ExperimentRunner", lambda **_kwargs: object())
+    monkeypatch.setattr(cli, "ensure_matched_starting_seeds", lambda *_a, **_k: (object(), object()))
+    rc = cli.main(["--provider", "fake", "--competition", "--sequential-control"])
+    assert rc == 0
+    assert walls == [21600.0, 21600.0]

@@ -11,7 +11,7 @@ HEADER = ["row_id", "user_id", "video_id", "score"]
 
 
 def load_score_vector(path: Path) -> np.ndarray:
-    scores = np.load(Path(path))
+    scores = np.load(Path(path), allow_pickle=False)
     if scores.ndim != 1:
         raise ValueError(f"scores must be 1-D, got shape {scores.shape}")
     if scores.size == 0:

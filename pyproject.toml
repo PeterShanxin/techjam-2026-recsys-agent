@@ -11,6 +11,9 @@ dependencies = [
 dev = [
   "pytest>=8",
 ]
+llm = [
+  "google-genai",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

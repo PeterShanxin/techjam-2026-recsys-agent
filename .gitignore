@@ -31,6 +31,7 @@ datasets/
 artifacts/
 outputs/
 runs/
+generated/
 *.sqlite
 *.sqlite3
 *.db

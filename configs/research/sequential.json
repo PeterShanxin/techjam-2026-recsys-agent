@@ -1,0 +1,10 @@
+{
+  "model": "gemini-3.7-flash",
+  "thinking_level": "medium",
+  "iterations": 3,
+  "max_repairs": 2,
+  "escalate_repairs": true,
+  "experiment_timeout_seconds": 900,
+  "manual_interventions": 0,
+  "evaluation_split": "valid"
+}

@@ -1,3 +1,6 @@
 # Keep the base environment intentionally small.
 # The official KuaiRand starter kit only requires NumPy.
 numpy>=1.26,<3
+
+# Optional Phase 3 Gemini provider (not required for unit tests):
+# google-genai

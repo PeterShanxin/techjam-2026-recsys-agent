@@ -50,6 +50,10 @@ class CandidateWorkspace:
         repo_root: Path,
     ) -> MaterializedCandidate:
         dest = self.dest_for(experiment_id)
+        if dest.exists():
+            raise SafetyError(
+                f"refusing to overwrite existing candidate for {experiment_id}: {dest}"
+            )
         dest.parent.mkdir(parents=True, exist_ok=True)
         validate_candidate_source(source, dest, self.root)
         dest.write_text(source, encoding="utf-8")

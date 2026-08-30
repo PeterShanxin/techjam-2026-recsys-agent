@@ -9,13 +9,21 @@ from typing import Any, Callable
 from research_agent.experiments import ExperimentRunner, ExperimentSpec
 from research_agent.experiments.splits import RESEARCH_SPLIT
 from research_agent.llm.secrets import redact_text, sanitize
-from research_agent.llm.types import LLMRequest, LLMResponse, UsageRecord
+from research_agent.llm.types import (
+    LLMAuthError,
+    LLMConfigError,
+    LLMProtocolError,
+    LLMRateLimitError,
+    LLMRequest,
+    LLMResponse,
+    LLMTransientError,
+    UsageRecord,
+)
 
 from .accounting import ResourceLedger
 from .constants import (
     DEFAULT_RESEARCH_MODEL,
     DEFAULT_THINKING_LEVEL,
-    FM_ROOT_ID,
     FM_VALID_REFERENCE,
     MAX_REPAIRS_PER_ITERATION,
     REPAIR_THINKING_LEVEL,
@@ -23,7 +31,15 @@ from .constants import (
 from .fm_root import fm_root_spec
 from .prompts import proposal_schema, repair_prompt, research_prompt
 from .proposal import ProposalError, ResearchProposal
+from .root import (
+    UnusableRootError,
+    find_usable_root,
+    is_usable_root_result,
+    next_root_experiment_id,
+    spec_with_experiment_id,
+)
 from .safety import SafetyError, validate_candidate_source
+from .session import experiment_id_for, new_research_session_id
 from .state import ResearchState, build_research_state
 from .trace import ResearchTrace
 from .workspace import CandidateWorkspace, MaterializedCandidate
@@ -53,6 +69,7 @@ class ResearchRun:
     ledger: ResourceLedger
     trace_dir: Path
     summary: dict[str, Any]
+    session_id: str = ""
 
 
 class ResearchAgent:
@@ -73,6 +90,7 @@ class ResearchAgent:
         root_spec: ExperimentSpec | None = None,
         emit: EmitFn | None = None,
         experiment_timeout_seconds: float = 900.0,
+        session_id: str | None = None,
     ) -> None:
         if max_iterations < 0:
             raise ValueError("max_iterations must be >= 0")
@@ -88,12 +106,13 @@ class ResearchAgent:
         self.wall_clock_seconds = wall_clock_seconds
         self.experiment_timeout_seconds = experiment_timeout_seconds
         self.root_spec = root_spec or fm_root_spec(timeout_seconds=experiment_timeout_seconds)
+        self.session_id = session_id or new_research_session_id()
         self.ledger = ResourceLedger(manual_interventions=int(manual_interventions))
         self.rejected_directions: list[str] = []
         self.emit = emit or (lambda _event: None)
         runs_dir = Path(self.runner.runs_dir)
         self.workspace = workspace or CandidateWorkspace(runs_dir / "generated")
-        research_dir = runs_dir / "research"
+        research_dir = runs_dir / "research" / self.session_id
         self.trace = trace or ResearchTrace(
             path=research_dir / "trace.jsonl",
             report_path=research_dir / "report.md",
@@ -103,6 +122,13 @@ class ResearchAgent:
     def run(self) -> ResearchRun:
         started = time.perf_counter()
         root = self.ensure_root()
+        if not is_usable_root_result(root.result):
+            self.ledger.research_wall_seconds = time.perf_counter() - started
+            summary = self._summary(root, [])
+            self.trace.write_exports(summary=summary)
+            raise UnusableRootError(
+                f"research root {root.experiment_id} is not a successful validation result"
+            )
         outcomes: list[IterationOutcome] = []
         for iteration in range(1, self.max_iterations + 1):
             remaining_wall = self._remaining_wall(started)
@@ -121,28 +147,33 @@ class ResearchAgent:
             ledger=self.ledger,
             trace_dir=self.trace.path.parent,
             summary=summary,
+            session_id=self.session_id,
         )
 
     def ensure_root(self) -> IterationOutcome:
-        spec = self.root_spec
-        existing = self.runner.registry.peek(spec.experiment_id)
-        if existing is not None and existing.result is not None:
-            result = existing.result
+        usable = find_usable_root(self.runner.registry, self.root_spec.experiment_id)
+        if usable is not None and usable.result is not None:
+            result = usable.result
+            experiment_id = usable.spec.experiment_id
             self.emit(
                 {
                     "type": "root",
-                    "experiment_id": spec.experiment_id,
+                    "experiment_id": experiment_id,
                     "status": result.status,
                     "reused": True,
                 }
             )
         else:
-            self.emit({"type": "root", "experiment_id": spec.experiment_id, "status": "running"})
+            experiment_id = next_root_experiment_id(
+                self.runner.registry, self.root_spec.experiment_id
+            )
+            spec = spec_with_experiment_id(self.root_spec, experiment_id)
+            self.emit({"type": "root", "experiment_id": experiment_id, "status": "running"})
             result = self.runner.run(spec)
             self.ledger.add_experiment(status=result.status, wall_seconds=result.wall_seconds)
         outcome = IterationOutcome(
             iteration=0,
-            experiment_id=spec.experiment_id,
+            experiment_id=experiment_id,
             parent_id=None,
             proposal=None,
             result_status=result.status,
@@ -154,8 +185,8 @@ class ResearchAgent:
         return outcome
 
     def _run_iteration(self, iteration: int, started: float) -> IterationOutcome:
-        experiment_id = f"ra-{iteration:03d}"
-        parent_id = _default_parent_id(self.runner.registry)
+        experiment_id = experiment_id_for(self.session_id, iteration)
+        parent_id = self._default_parent_id()
         parent_source = self._parent_source(parent_id)
         state = build_research_state(
             registry=self.runner.registry,
@@ -172,6 +203,7 @@ class ResearchAgent:
                 "type": "iteration",
                 "iteration": iteration,
                 "max_iterations": self.max_iterations,
+                "session_id": self.session_id,
                 "parent": parent_id,
                 "elite": None if state.current_elite is None else state.current_elite.get("experiment_id"),
             }
@@ -197,7 +229,7 @@ class ResearchAgent:
             self._emit_iteration(outcome)
             return outcome
 
-        parent_id = _resolve_parent_id(self.runner.registry, proposal.selected_parent_id)
+        parent_id = self._resolve_parent_id(proposal.selected_parent_id)
         parent_source = self._parent_source(parent_id)
         try:
             materialized = self.workspace.materialize(
@@ -236,7 +268,7 @@ class ResearchAgent:
             evaluation_split=RESEARCH_SPLIT,
             timeout_seconds=min(proposal.timeout_seconds, self.experiment_timeout_seconds),
             allow_test_split=False,
-            tags=("phase3", "autonomous"),
+            tags=("phase3", "autonomous", self.session_id),
             notes=proposal.mutation_summary,
         )
         result = self.runner.run(spec)
@@ -307,6 +339,8 @@ class ResearchAgent:
     def _generate(self, request: LLMRequest, usages: list[UsageRecord]) -> LLMResponse | None:
         try:
             response = self.provider.generate(request)
+        except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError):
+            raise
         except Exception as exc:
             usage = UsageRecord(
                 provider=getattr(self.provider, "name", "unknown"),
@@ -319,6 +353,9 @@ class ResearchAgent:
             )
             usages.append(usage)
             return None
+        retries = int(getattr(self.provider, "transport_retries", 0) or 0)
+        if retries:
+            self.ledger.transport_retries = retries
         usages.append(response.usage)
         return response
 
@@ -338,6 +375,23 @@ class ResearchAgent:
             if note not in self.rejected_directions:
                 self.rejected_directions.append(note)
 
+    def _default_parent_id(self) -> str:
+        elite = self.runner.registry.elite()
+        if elite is not None:
+            return elite.spec.experiment_id
+        usable = find_usable_root(self.runner.registry, self.root_spec.experiment_id)
+        if usable is not None:
+            return usable.spec.experiment_id
+        return self.root_spec.experiment_id
+
+    def _resolve_parent_id(self, requested: str) -> str:
+        entry = self.runner.registry.peek(requested)
+        if entry is not None and is_usable_root_result(entry.result):
+            return requested
+        if entry is not None and entry.result is not None and entry.result.status == "success":
+            return requested
+        return self._default_parent_id()
+
     def _trace_record(
         self,
         outcome: IterationOutcome,
@@ -353,7 +407,7 @@ class ResearchAgent:
                 "primary": result.metrics.primary,
             }
         parent_metrics = _parent_metrics(self.runner.registry, outcome.parent_id)
-        fm_metrics = _parent_metrics(self.runner.registry, FM_ROOT_ID) or {
+        fm_metrics = _usable_fm_metrics(self.runner.registry) or {
             "GAUC": FM_VALID_REFERENCE["GAUC"],
             "nDCG@5": FM_VALID_REFERENCE["nDCG@5"],
             "primary": FM_VALID_REFERENCE["primary"],
@@ -386,6 +440,7 @@ class ResearchAgent:
         proposal = outcome.proposal
         return sanitize(
             {
+                "session_id": self.session_id,
                 "iteration": iteration,
                 "experiment_id": outcome.experiment_id,
                 "parent_id": outcome.parent_id,
@@ -424,13 +479,12 @@ class ResearchAgent:
                 "GAUC": elite.result.metrics.gauc,
                 "nDCG@5": elite.result.metrics.ndcg_at_5,
             }
-        fm_primary = FM_VALID_REFERENCE["primary"]
-        fm_entry = self.runner.registry.peek(self.root_spec.experiment_id)
-        if fm_entry is not None and fm_entry.result is not None and fm_entry.result.metrics is not None:
-            fm_primary = fm_entry.result.metrics.primary
+        fm_metrics = _usable_fm_metrics(self.runner.registry)
+        fm_primary = FM_VALID_REFERENCE["primary"] if fm_metrics is None else fm_metrics["primary"]
         improvement = None if best is None else best["primary"] - fm_primary
         return sanitize(
             {
+                "session_id": self.session_id,
                 "model": self.model,
                 "thinking_level": self.thinking_level,
                 "manual_interventions": self.ledger.manual_interventions,
@@ -451,6 +505,7 @@ class ResearchAgent:
         self.emit(
             {
                 "type": "result",
+                "session_id": self.session_id,
                 "iteration": outcome.iteration,
                 "experiment_id": outcome.experiment_id,
                 "parent_id": outcome.parent_id,
@@ -482,20 +537,17 @@ def _try_parse_proposal(
         validate_candidate_source(proposal.candidate_source, dest, workspace_root)
     except (ProposalError, SafetyError) as exc:
         return None, redact_text(str(exc))
+    except (TypeError, ValueError) as exc:
+        return None, redact_text(str(exc))
     return proposal, None
 
 
-def _default_parent_id(registry: Any) -> str:
-    elite = registry.elite()
-    if elite is not None:
-        return elite.spec.experiment_id
-    return FM_ROOT_ID
-
-
-def _resolve_parent_id(registry: Any, requested: str) -> str:
-    if registry.peek(requested) is not None:
-        return requested
-    return _default_parent_id(registry)
+def _usable_fm_metrics(registry: Any) -> dict[str, float] | None:
+    usable = find_usable_root(registry)
+    if usable is None or usable.result is None or usable.result.metrics is None:
+        return None
+    m = usable.result.metrics
+    return {"GAUC": m.gauc, "nDCG@5": m.ndcg_at_5, "primary": m.primary}
 
 
 def _parent_metrics(registry: Any, experiment_id: str | None) -> dict[str, float] | None:

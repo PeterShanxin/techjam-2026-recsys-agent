@@ -24,6 +24,7 @@ class ResourceLedger:
     completed_experiments: int = 0
     failed_experiments: int = 0
     manual_interventions: int = 0
+    transport_retries: int = 0
     calls: list[UsageRecord] = field(default_factory=list)
 
     def add_usage(self, usage: UsageRecord) -> None:
@@ -66,4 +67,5 @@ class ResourceLedger:
             "completed_experiments": self.completed_experiments,
             "failed_experiments": self.failed_experiments,
             "manual_interventions": self.manual_interventions,
+            "transport_retries": self.transport_retries,
         }

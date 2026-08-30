@@ -13,10 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from research_agent.agent import ResearchAgent
+from research_agent.agent import ResearchAgent, UnusableRootError
 from research_agent.agent.constants import DEFAULT_RESEARCH_MODEL, DEFAULT_THINKING_LEVEL
 from research_agent.experiments import ExperimentRunner
-from research_agent.llm import FakeProvider, GeminiProvider, LLMConfigError
+from research_agent.llm import (
+    FakeProvider,
+    GeminiProvider,
+    LLMAuthError,
+    LLMConfigError,
+    LLMProtocolError,
+    LLMRateLimitError,
+    LLMTransientError,
+)
+from research_agent.llm.credentials import resolve_gemini_api_key
 from research_agent.llm.secrets import redact_text
 from research_agent.llm.types import THINKING_LEVELS, normalize_thinking_level
 
@@ -39,7 +48,8 @@ def _print_event(event: dict) -> None:
     if kind == "iteration":
         print("")
         print(
-            f"=== iteration {event.get('iteration')}/{event.get('max_iterations')} "
+            f"=== session {event.get('session_id')} "
+            f"iteration {event.get('iteration')}/{event.get('max_iterations')} "
             f"parent={event.get('parent')} elite={event.get('elite')} ==="
         )
         return
@@ -74,6 +84,7 @@ def _print_event(event: dict) -> None:
         resources = summary.get("resources") or {}
         print("")
         print("=== done ===")
+        print(f"session     {summary.get('session_id')}")
         print(f"best        {summary.get('best')}")
         print(f"improvement vs FM {summary.get('improvement_vs_fm')}")
         print(
@@ -115,14 +126,20 @@ def main(argv: list[str] | None = None) -> int:
         choices=("gemini", "fake"),
         help="fake is for dry tests only",
     )
-    ap.add_argument("--skip-root", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
 
-    if os.environ.get("GEMINI_API_KEY"):
-        # Never print the value. Presence only.
-        pass
-
     thinking = normalize_thinking_level(args.thinking)
+    if args.provider == "fake":
+        provider = FakeProvider(script=[])
+        print("provider    fake (no API calls)")
+    else:
+        try:
+            resolve_gemini_api_key(ROOT)
+        except LLMConfigError as exc:
+            print(redact_text(str(exc)), file=sys.stderr)
+            return 2
+        provider = GeminiProvider(model=args.model, repo_root=ROOT)
+
     data_dir = _resolve_data_dir(args.data_dir)
     runs_dir = Path(args.runs_dir) if args.runs_dir else ROOT / "runs"
     runner = ExperimentRunner(
@@ -131,15 +148,6 @@ def main(argv: list[str] | None = None) -> int:
         data_dir=data_dir,
         allow_test=False,
     )
-    if args.provider == "fake":
-        provider = FakeProvider(script=[])
-        print("provider    fake (no API calls)")
-    else:
-        try:
-            provider = GeminiProvider(model=args.model)
-        except LLMConfigError as exc:
-            print(redact_text(str(exc)), file=sys.stderr)
-            return 2
     print(f"model       {args.model}")
     print(f"thinking    {thinking}")
     print(f"iterations  {args.iterations}")
@@ -158,7 +166,12 @@ def main(argv: list[str] | None = None) -> int:
         emit=_print_event,
         experiment_timeout_seconds=args.timeout,
     )
-    run = agent.run()
+    print(f"session     {agent.session_id}")
+    try:
+        run = agent.run()
+    except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError, UnusableRootError) as exc:
+        print(redact_text(str(exc)), file=sys.stderr)
+        return 2
     ok = True
     if run.root is None or run.root.result_status != "success":
         ok = False

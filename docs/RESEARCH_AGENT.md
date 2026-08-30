@@ -20,16 +20,20 @@ No population. No crossover. No evolutionary selection pressure. That is Phase 4
 
 ## LLM
 
-Production: `GeminiProvider` (`google-genai`, Gemini Developer API).
+Production: `GeminiProvider` talks to the official Interactions REST API with `urllib` (`POST /v1beta/interactions`). No `google-genai` SDK.
 
 - model: `gemini-3.7-flash`
-- thinking: `medium` on research calls
+- thinking: `medium` on research calls (`generation_config.thinking_level`)
 - `high` only on bounded repair
-- credential: `GEMINI_API_KEY` from the environment only
-- structured JSON via `response_schema`
+- credential: `GEMINI_API_KEY` from process env, else repo-root `.env` (`override=False`)
+- missing key fails fast before FM training
+- structured JSON via `response_format` + JSON schema
+- responses parsed from completed `steps` / `model_output` (not legacy `outputs`)
 - usage metadata is first-party; missing fields stay `None` (no token estimates)
 
-Tests use `FakeProvider`. They must not call Gemini.
+Tests use `FakeProvider` or a scripted HTTP transport. They must not call Gemini.
+
+Experiment IDs are session-scoped: `rs-<timestamp>-<rand>-001`. Generated candidate files are never overwritten.
 
 ## Code mutation
 
@@ -39,9 +43,11 @@ The file is syntax-checked, fingerprinted, and diffed against the selected paren
 
 The official evaluator stays immutable. Candidates write `scores.npy` only.
 
+Failed, timeout, invalid, or corrupt stored roots are not reused. A later session allocates `fm-root-r001`, `fm-root-r002`, … and must succeed on validation before any paid research call.
+
 ## FM root
 
-Research starts from `fm-root`, an organizer-compatible FM candidate:
+Research starts from a usable `fm-root` (success + valid split + finite metrics):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_experiment.py --spec configs\experiments\fm_valid.json
@@ -61,4 +67,4 @@ Smoke (requires `GEMINI_API_KEY`):
 .\.venv\Scripts\python.exe scripts\run_gemini_smoke.py
 ```
 
-Traces: `runs/research/trace.jsonl`, `report.md`, `summary.json`.
+Traces: `runs/research/<session-id>/trace.jsonl`, `report.md`, `summary.json`.

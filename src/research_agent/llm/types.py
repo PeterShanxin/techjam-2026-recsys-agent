@@ -16,7 +16,23 @@ class LLMError(RuntimeError):
 
 
 class LLMConfigError(LLMError):
-    """Missing SDK, missing credential, or invalid provider config."""
+    """Missing credential or invalid provider config. Fail fast. Not repairable."""
+
+
+class LLMAuthError(LLMError):
+    """401/403. Stop live research. Never echo credentials."""
+
+
+class LLMRateLimitError(LLMError):
+    """429 after bounded transport retries."""
+
+
+class LLMTransientError(LLMError):
+    """Network / 5xx after bounded transport retries."""
+
+
+class LLMProtocolError(LLMError):
+    """HTTP or envelope shape does not match the current Interactions contract."""
 
 
 def normalize_thinking_level(level: str) -> str:
@@ -41,6 +57,7 @@ class UsageRecord:
     thinking_tokens: int | None = None
     cached_tokens: int | None = None
     total_tokens: int | None = None
+    tool_use_tokens: int | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +73,7 @@ class UsageRecord:
             "thinking_tokens": self.thinking_tokens,
             "cached_tokens": self.cached_tokens,
             "total_tokens": self.total_tokens,
+            "tool_use_tokens": self.tool_use_tokens,
             "error": self.error,
         }
 
@@ -73,6 +91,7 @@ class UsageRecord:
             thinking_tokens=_opt_int(data.get("thinking_tokens")),
             cached_tokens=_opt_int(data.get("cached_tokens")),
             total_tokens=_opt_int(data.get("total_tokens")),
+            tool_use_tokens=_opt_int(data.get("tool_use_tokens")),
             error=data.get("error"),
         )
 
@@ -133,18 +152,46 @@ def usage_from_api_metadata(
             purpose=purpose,
             status=status,
             latency_seconds=latency_seconds,
-            input_tokens=_first_int(raw, ("prompt_token_count", "promptTokenCount", "input_tokens")),
+            input_tokens=_first_int(
+                raw,
+                (
+                    "total_input_tokens",
+                    "prompt_token_count",
+                    "promptTokenCount",
+                    "input_tokens",
+                ),
+            ),
             output_tokens=_first_int(
-                raw, ("candidates_token_count", "candidatesTokenCount", "output_tokens")
+                raw,
+                (
+                    "total_output_tokens",
+                    "candidates_token_count",
+                    "candidatesTokenCount",
+                    "output_tokens",
+                ),
             ),
             thinking_tokens=_first_int(
-                raw, ("thoughts_token_count", "thoughtsTokenCount", "thinking_tokens")
+                raw,
+                (
+                    "total_thought_tokens",
+                    "thoughts_token_count",
+                    "thoughtsTokenCount",
+                    "thinking_tokens",
+                ),
             ),
             cached_tokens=_first_int(
                 raw,
-                ("cached_content_token_count", "cachedContentTokenCount", "cached_tokens"),
+                (
+                    "total_cached_tokens",
+                    "cached_content_token_count",
+                    "cachedContentTokenCount",
+                    "cached_tokens",
+                ),
             ),
-            total_tokens=_first_int(raw, ("total_token_count", "totalTokenCount", "total_tokens")),
+            total_tokens=_first_int(
+                raw, ("total_tokens", "total_token_count", "totalTokenCount")
+            ),
+            tool_use_tokens=_first_int(raw, ("total_tool_use_tokens", "tool_use_tokens")),
             error=error,
         ),
         raw,
@@ -168,6 +215,12 @@ def _metadata_to_dict(meta: Any) -> dict[str, Any]:
         "thoughtsTokenCount",
         "cachedContentTokenCount",
         "totalTokenCount",
+        "total_input_tokens",
+        "total_output_tokens",
+        "total_thought_tokens",
+        "total_cached_tokens",
+        "total_tokens",
+        "total_tool_use_tokens",
     ):
         if hasattr(meta, name):
             out[name] = getattr(meta, name)

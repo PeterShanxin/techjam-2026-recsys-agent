@@ -47,6 +47,7 @@ def render_markdown(summary: dict[str, Any], records: list[dict[str, Any]]) -> s
     lines = [
         "# Phase 3 research trace",
         "",
+        f"- session: `{summary.get('session_id')}`",
         f"- model: `{summary.get('model')}`",
         f"- thinking: `{summary.get('thinking_level')}`",
         f"- manual interventions: {summary.get('manual_interventions', 0)}",

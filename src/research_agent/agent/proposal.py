@@ -152,10 +152,8 @@ class ResearchProposal:
         parent_id = strings["selected_parent_id"]
         if not EXPERIMENT_ID_RE.fullmatch(parent_id):
             raise ProposalError(f"invalid selected_parent_id {parent_id!r}")
-        seed = data.get("seed", 0)
-        if not isinstance(seed, int) or isinstance(seed, bool):
-            raise ProposalError("seed must be an int")
-        timeout = float(data.get("timeout_seconds", 600.0))
+        seed = _optional_int(data.get("seed", 0), "seed", default=0)
+        timeout = _optional_float(data.get("timeout_seconds", 600.0), "timeout_seconds", default=600.0)
         if timeout <= 0:
             raise ProposalError("timeout_seconds must be positive")
         return cls(
@@ -165,3 +163,20 @@ class ResearchProposal:
             timeout_seconds=timeout,
             **strings,
         )
+
+
+def _optional_int(value: Any, name: str, *, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ProposalError(f"{name} must be an int")
+    return value
+
+
+def _optional_float(value: Any, name: str, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ProposalError(f"{name} must be a number") from exc

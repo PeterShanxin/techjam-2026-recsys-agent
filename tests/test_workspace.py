@@ -68,3 +68,20 @@ def test_unified_diff_readable():
     diff = unified_diff("a\n", "b\n", from_name="parent.py", to_name="candidate.py")
     assert "-a" in diff
     assert "+b" in diff
+
+
+def test_materialize_refuses_overwrite(tmp_path: Path):
+    workspace = CandidateWorkspace(tmp_path / "generated")
+    workspace.materialize(
+        experiment_id="rs-keep-001",
+        source=CANDIDATE_SOURCE,
+        parent_source="parent",
+        repo_root=tmp_path,
+    )
+    with pytest.raises(SafetyError, match="overwrite"):
+        workspace.materialize(
+            experiment_id="rs-keep-001",
+            source=CANDIDATE_SOURCE + "\n# other\n",
+            parent_source="parent",
+            repo_root=tmp_path,
+        )

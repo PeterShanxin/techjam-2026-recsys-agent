@@ -17,6 +17,10 @@
   "gemini_live": {
     "smoke": "blocked",
     "autonomous_iterations": "blocked",
-    "reason": "GEMINI_API_KEY unset in environment"
+    "transport": "REST POST /v1beta/interactions",
+    "model": "gemini-3.7-flash",
+    "thinking": "medium",
+    "auth": "ok",
+    "reason": "gemini-3.7-flash returned HTTP 500 high-demand after credentials and model listing succeeded; research loop not started"
   }
 }

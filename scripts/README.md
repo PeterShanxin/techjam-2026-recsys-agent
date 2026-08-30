@@ -30,4 +30,4 @@ See [`docs/BASELINE_REPRODUCTION.md`](../docs/BASELINE_REPRODUCTION.md).
 .\.venv\Scripts\python.exe scripts\run_gemini_smoke.py
 ```
 
-Requires `GEMINI_API_KEY` for live Gemini. Unit tests use `FakeProvider` and spend no API money. Details: [`docs/RESEARCH_AGENT.md`](../docs/RESEARCH_AGENT.md).
+Requires `GEMINI_API_KEY` in the process environment or repo-root `.env`. Unit tests use `FakeProvider` and spend no API money. Details: [`docs/RESEARCH_AGENT.md`](../docs/RESEARCH_AGENT.md).

@@ -28,6 +28,7 @@ from .constants import (
     MAX_REPAIRS_PER_ITERATION,
     REPAIR_THINKING_LEVEL,
 )
+from .data_contract import format_data_contract_repair_message
 from .environment import format_preflight_repair_message
 from .fm_root import fm_root_spec
 from .prompts import proposal_schema, repair_prompt, research_prompt
@@ -206,6 +207,7 @@ class ResearchAgent:
             selected_parent_id=parent_id,
             rejected_directions=self.rejected_directions,
             repo_root=self.runner.repo_root,
+            data_dir=self.runner.data_dir,
         )
         self.emit(
             {
@@ -298,19 +300,32 @@ class ResearchAgent:
         self._emit_iteration(outcome)
         return outcome
 
+    def propose_candidate(
+        self,
+        state: ResearchState,
+        dest: Path,
+        *,
+        purpose: str = "research",
+        prompt: str | None = None,
+    ) -> tuple[ResearchProposal | None, list[UsageRecord], str | None]:
+        return self._propose(state, dest, purpose=purpose, prompt=prompt)
+
     def _propose(
         self,
         state: ResearchState,
         dest: Path,
+        *,
+        purpose: str = "research",
+        prompt: str | None = None,
     ) -> tuple[ResearchProposal | None, list[UsageRecord], str | None]:
         usages: list[UsageRecord] = []
         try:
             request = LLMRequest(
-                prompt=research_prompt(state),
+                prompt=prompt or research_prompt(state),
                 response_schema=proposal_schema(),
                 model=self.model,
                 thinking_level=self.thinking_level,
-                purpose="research",
+                purpose=purpose,
             )
             response = self._generate(request, usages)
             last_error = None if response is not None else (usages[-1].error if usages else "provider error")
@@ -322,6 +337,7 @@ class ResearchAgent:
                         dest,
                         self.workspace.root,
                         environment=state.environment,
+                        data_contract=state.data_contract,
                     )
                     if proposal is not None:
                         return proposal, usages, None
@@ -557,6 +573,7 @@ def _try_parse_proposal(
     dest: Path,
     workspace_root: Path,
     environment: Any | None = None,
+    data_contract: Any | None = None,
 ) -> tuple[ResearchProposal | None, str | None]:
     if response.parsed is None:
         return None, response.usage.error or "structured output missing"
@@ -570,14 +587,33 @@ def _try_parse_proposal(
             dest,
             workspace_root,
             environment=environment,
+            proposal=proposal,
+            data_contract=data_contract,
         )
     except SafetyError as exc:
+        message = redact_text(str(exc))
+        if "unavailable_data_field" in message:
+            return None, format_data_contract_repair_message(
+                fields=_fields_from_unavailable_error(message),
+                hypothesis=proposal.hypothesis,
+                contract=data_contract,
+            )
         return None, format_preflight_repair_message(
-            redact_text(str(exc)),
+            message,
             hypothesis=proposal.hypothesis,
             environment=environment,
         )
     return proposal, None
+
+
+def _fields_from_unavailable_error(message: str) -> tuple[str, ...]:
+    start = message.find("[")
+    end = message.find("]")
+    if start == -1 or end == -1 or end <= start:
+        return ()
+    blob = message[start + 1 : end]
+    parts = [item.strip().strip("'\"") for item in blob.split(",") if item.strip()]
+    return tuple(parts)
 
 
 def _research_validity(outcome: IterationOutcome, iteration: int) -> str:

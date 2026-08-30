@@ -1,0 +1,18 @@
+{
+  "model": "gemini-3.7-flash",
+  "thinking_level": "medium",
+  "population_size": 4,
+  "elite_count": 2,
+  "generations": 2,
+  "max_new_evaluations": 6,
+  "include_ensemble_seed": true,
+  "fill_to_size_on_init": true,
+  "convergence_epsilon": 0.002,
+  "convergence_patience": 3,
+  "efficiency_penalty": 0.0,
+  "prefer_crossover_from_generation": 2,
+  "max_repairs": 2,
+  "experiment_timeout_seconds": 1800,
+  "evaluation_split": "valid",
+  "live_pilot_model": "gemini-3.6-flash"
+}

@@ -18,6 +18,7 @@ from .constants import (
     ORGANIZER_DEAD_ENDS,
     ORGANIZER_PROMISING_CATEGORIES,
 )
+from .data_contract import DataContract, discover_data_contract
 from .environment import EnvironmentCapabilities, discover_environment
 
 
@@ -44,6 +45,13 @@ class ResearchState:
         default_factory=lambda: list(ORGANIZER_PROMISING_CATEGORIES)
     )
     environment: EnvironmentCapabilities = field(default_factory=discover_environment)
+    data_contract: DataContract = field(default_factory=discover_data_contract)
+    operator: str = "sequential"
+    population: list[dict[str, Any]] = field(default_factory=list)
+    crossover_parents: list[dict[str, Any]] = field(default_factory=list)
+    remaining_evaluation_budget: int | None = None
+    remaining_token_budget: int | None = None
+    remaining_generations: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return sanitize(
@@ -67,11 +75,20 @@ class ResearchState:
                 "organizer_dead_ends": list(self.organizer_dead_ends),
                 "promising_categories": list(self.promising_categories),
                 "environment": self.environment.to_dict(),
+                "data_contract": self.data_contract.to_dict(),
+                "operator": self.operator,
+                "population": list(self.population),
+                "crossover_parents": list(self.crossover_parents),
+                "remaining_evaluation_budget": self.remaining_evaluation_budget,
+                "remaining_token_budget": self.remaining_token_budget,
+                "remaining_generations": self.remaining_generations,
                 "guidance": (
                     "These organizer notes are research context, not a script. "
                     "Decide the next experiment from evidence. "
                     "Stay inside environment.allowed_third_party and the Python standard library. "
                     "If the method cannot run, fail explicitly; never silently substitute FM or the parent. "
+                    "Honor data_contract: mechanisms that need is_like or play_time_ms must read raw CSVs; "
+                    "data.load tuples do not include those fields. "
                     "Return one complete candidate Python file. Do not modify evaluate.py. "
                     "Write ordered scores for the requested split only."
                 ),
@@ -97,6 +114,14 @@ def build_research_state(
     recent_k: int = 5,
     repo_root: Path | None = None,
     environment: EnvironmentCapabilities | None = None,
+    data_contract: DataContract | None = None,
+    data_dir: Path | None = None,
+    operator: str = "sequential",
+    population: list[dict[str, Any]] | None = None,
+    crossover_parents: list[dict[str, Any]] | None = None,
+    remaining_evaluation_budget: int | None = None,
+    remaining_token_budget: int | None = None,
+    remaining_generations: int | None = None,
 ) -> ResearchState:
     elite_entry = registry.elite()
     elite = _summarize_entry(elite_entry) if elite_entry is not None else None
@@ -143,6 +168,13 @@ def build_research_state(
         lineage=lineage[-20:],
         llm_usage=ledger.to_dict(),
         environment=environment or discover_environment(repo_root),
+        data_contract=data_contract or discover_data_contract(repo_root, data_dir),
+        operator=operator,
+        population=list(population or []),
+        crossover_parents=list(crossover_parents or []),
+        remaining_evaluation_budget=remaining_evaluation_budget,
+        remaining_token_budget=remaining_token_budget,
+        remaining_generations=remaining_generations,
     )
 
 

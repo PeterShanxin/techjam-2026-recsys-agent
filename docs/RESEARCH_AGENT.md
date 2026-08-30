@@ -85,6 +85,8 @@ Smoke (requires `GEMINI_API_KEY`):
 
 Traces: `runs/research/<session-id>/trace.jsonl`, `report.md`, `summary.json`.
 
+ResearchState includes a compact **data contract** derived from `starter/kuairand/data.py`: `data.load()` 7-tuples, encode fields, official `long_view` target, and columns that are **not** on the loader (including `is_like` and `play_time_ms`). A proposal that claims those fields without reading raw CSVs is rejected before the runner. See [`EVOLUTION.md`](EVOLUTION.md) for the Phase 4 controller.
+
 ## Live validation
 
 Intended production model stays `gemini-3.7-flash`. The first closed-loop KuaiRand validation did **not** use it.

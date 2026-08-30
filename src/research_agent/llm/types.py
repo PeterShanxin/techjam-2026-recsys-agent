@@ -8,7 +8,7 @@ THINKING_LEVELS = ("low", "medium", "high")
 DEFAULT_MODEL = "gemini-3.7-flash"
 DEFAULT_THINKING_LEVEL = "medium"
 DEFAULT_PROVIDER = "gemini"
-PURPOSES = ("research", "repair", "smoke")
+PURPOSES = ("research", "repair", "smoke", "mutation", "crossover")
 
 
 class LLMError(RuntimeError):

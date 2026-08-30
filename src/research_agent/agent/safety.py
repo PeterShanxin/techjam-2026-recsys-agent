@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
+import sys
+import sysconfig
 from pathlib import Path
 
 from .constants import CANDIDATE_FILENAME
+from .environment import EnvironmentCapabilities, discover_environment
 
 CLI_FLAGS = ("--data-dir", "--split", "--output-scores", "--seed", "--config")
 WRITE_FUNCS = {"write_text", "write_bytes", "write", "replace", "unlink", "move", "copy", "copy2"}
+_IMPORT_ERROR_NAMES = {"ImportError", "ModuleNotFoundError"}
 
 
 class SafetyError(ValueError):
@@ -52,13 +57,51 @@ def assert_no_evaluator_tampering(source: str, tree: ast.AST | None = None) -> N
         raise SafetyError("candidate appears to modify starter/kuairand/evaluate.py")
 
 
-def validate_candidate_source(source: str, dest: Path, workspace_root: Path) -> ast.AST:
+def assert_no_silent_dependency_fallback(
+    tree: ast.AST, environment: EnvironmentCapabilities
+) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        if not _catches_import_error(node):
+            continue
+        for stmt in node.body:
+            for name in _import_toplevel_names(stmt):
+                if not is_allowed_import(name, environment):
+                    raise SafetyError(f"silent_dependency_fallback: {name}")
+
+
+def assert_allowed_imports(tree: ast.AST, environment: EnvironmentCapabilities) -> None:
+    for node in ast.walk(tree):
+        for name in _import_toplevel_names(node):
+            if not is_allowed_import(name, environment):
+                raise SafetyError(f"unsupported_dependency: {name}")
+
+
+def is_allowed_import(name: str, environment: EnvironmentCapabilities) -> bool:
+    if not name:
+        return True
+    if name in environment.starter_modules or name in environment.allowed_third_party:
+        return True
+    return _is_stdlib(name)
+
+
+def validate_candidate_source(
+    source: str,
+    dest: Path,
+    workspace_root: Path,
+    *,
+    environment: EnvironmentCapabilities | None = None,
+) -> ast.AST:
     if not source or not source.strip():
         raise SafetyError("candidate_source is empty")
     assert_workspace_path(dest, workspace_root)
     tree = syntax_check(source)
     assert_cli_contract(source, tree)
     assert_no_evaluator_tampering(source, tree)
+    env = environment or discover_environment()
+    assert_no_silent_dependency_fallback(tree, env)
+    assert_allowed_imports(tree, env)
     return tree
 
 
@@ -99,5 +142,66 @@ def _call_name(func: ast.AST) -> str:
     if isinstance(func, ast.Attribute):
         return func.attr
     return ""
+
+
+def _import_toplevel_names(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [_root_module(alias.name) for alias in node.names if alias.name]
+    if isinstance(node, ast.ImportFrom):
+        if node.level and node.level > 0:
+            return []
+        if node.module:
+            return [_root_module(node.module)]
+        return []
+    return []
+
+
+def _root_module(name: str) -> str:
+    return name.split(".", 1)[0]
+
+
+def _catches_import_error(node: ast.Try) -> bool:
+    for handler in node.handlers:
+        if handler.type is None:
+            return True
+        if _handler_mentions_import_error(handler.type):
+            return True
+    return False
+
+
+def _handler_mentions_import_error(exc: ast.AST) -> bool:
+    if isinstance(exc, ast.Name):
+        return exc.id in _IMPORT_ERROR_NAMES
+    if isinstance(exc, ast.Attribute):
+        return exc.attr in _IMPORT_ERROR_NAMES
+    if isinstance(exc, ast.Tuple):
+        return any(_handler_mentions_import_error(elt) for elt in exc.elts)
+    return False
+
+
+def _is_stdlib(name: str) -> bool:
+    if name in sys.builtin_module_names:
+        return True
+    stdlib_names = getattr(sys, "stdlib_module_names", None)
+    if stdlib_names is not None:
+        return name in stdlib_names
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError, ModuleNotFoundError):
+        return False
+    if spec is None:
+        return False
+    origin = spec.origin
+    if origin in ("built-in", "frozen"):
+        return True
+    if not origin:
+        return False
+    path = Path(origin).resolve()
+    stdlib = Path(sysconfig.get_path("stdlib")).resolve()
+    try:
+        path.relative_to(stdlib)
+    except ValueError:
+        return False
+    return "site-packages" not in path.parts and "dist-packages" not in path.parts
 
 

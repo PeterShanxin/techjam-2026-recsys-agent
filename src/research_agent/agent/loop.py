@@ -28,6 +28,7 @@ from .constants import (
     MAX_REPAIRS_PER_ITERATION,
     REPAIR_THINKING_LEVEL,
 )
+from .environment import format_preflight_repair_message
 from .fm_root import fm_root_spec
 from .prompts import proposal_schema, repair_prompt, research_prompt
 from .proposal import ProposalError, ResearchProposal
@@ -204,6 +205,7 @@ class ResearchAgent:
             parent_source=parent_source,
             selected_parent_id=parent_id,
             rejected_directions=self.rejected_directions,
+            repo_root=self.runner.repo_root,
         )
         self.emit(
             {
@@ -315,7 +317,12 @@ class ResearchAgent:
             previous_text = "" if response is None else response.text
             for repair in range(0, self.max_repairs + 1):
                 if response is not None:
-                    proposal, last_error = _try_parse_proposal(response, dest, self.workspace.root)
+                    proposal, last_error = _try_parse_proposal(
+                        response,
+                        dest,
+                        self.workspace.root,
+                        environment=state.environment,
+                    )
                     if proposal is not None:
                         return proposal, usages, None
                 elif last_error is None:
@@ -483,6 +490,7 @@ class ResearchAgent:
                 "llm_calls": [item.to_dict() for item in usages],
                 "llm_latency_seconds": llm_latency,
                 "experiment_runtime_seconds": None if result is None else result.wall_seconds,
+                "research_validity": _research_validity(outcome, iteration),
                 "cumulative": self.ledger.to_dict(),
                 "manual_interventions": self.ledger.manual_interventions,
             }
@@ -548,17 +556,36 @@ def _try_parse_proposal(
     response: LLMResponse,
     dest: Path,
     workspace_root: Path,
+    environment: Any | None = None,
 ) -> tuple[ResearchProposal | None, str | None]:
     if response.parsed is None:
         return None, response.usage.error or "structured output missing"
     try:
         proposal = ResearchProposal.from_dict(response.parsed)
-        validate_candidate_source(proposal.candidate_source, dest, workspace_root)
-    except (ProposalError, SafetyError) as exc:
+    except (ProposalError, TypeError, ValueError) as exc:
         return None, redact_text(str(exc))
-    except (TypeError, ValueError) as exc:
-        return None, redact_text(str(exc))
+    try:
+        validate_candidate_source(
+            proposal.candidate_source,
+            dest,
+            workspace_root,
+            environment=environment,
+        )
+    except SafetyError as exc:
+        return None, format_preflight_repair_message(
+            redact_text(str(exc)),
+            hypothesis=proposal.hypothesis,
+            environment=environment,
+        )
     return proposal, None
+
+
+def _research_validity(outcome: IterationOutcome, iteration: int) -> str:
+    if iteration == 0:
+        return "root"
+    if outcome.result is not None:
+        return "hypothesis_tested"
+    return "not_executed"
 
 
 def _usable_fm_metrics(registry: Any) -> dict[str, float] | None:

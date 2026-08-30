@@ -1,7 +1,8 @@
 {
   "phase": 3,
   "record": "live-validation",
-  "status": "PASS",
+  "status": "PILOT_ONLY",
+  "research_integrity": "iteration 1 silently fell back to official FM when torch was missing; harness success is not valid BPR evidence",
   "intended_model": "gemini-3.7-flash",
   "live_model": "gemini-3.6-flash",
   "thinking": "medium",
@@ -82,7 +83,7 @@
         "thinking_tokens": 10057,
         "total_tokens": 17723
       },
-      "note": "Metrics match fm-root exactly. Candidate caught ImportError for torch and trained official FM, so BPR was not actually tested."
+      "note": "SEMANTIC NO-OP. Metrics match fm-root exactly. Candidate caught ImportError for torch and trained official FM, so BPR was not actually tested. Do not treat as positive or negative evidence for pairwise BPR."
     },
     {
       "iteration": 2,

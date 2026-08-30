@@ -82,6 +82,7 @@ def render_markdown(summary: dict[str, Any], records: list[dict[str, Any]]) -> s
                 f"- LLM latency (s): {row.get('llm_latency_seconds')}",
                 f"- experiment runtime (s): {row.get('experiment_runtime_seconds')}",
                 f"- repair calls: {row.get('repair_calls')}",
+                f"- research validity: {row.get('research_validity')}",
                 f"- error: {row.get('error')}",
                 "",
             ]

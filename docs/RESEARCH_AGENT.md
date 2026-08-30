@@ -57,6 +57,20 @@ Research starts from a usable `fm-root` (success + valid split + finite metrics)
 
 Expected validation (seed 0, Phase 1): GAUC ≈ 0.6671, nDCG@5 ≈ 0.5358, primary ≈ 0.6015.
 
+## Scientific integrity
+
+ResearchState includes a compact `environment` snapshot: Python version, platform, architecture, allowed third-party packages (from project deps that actually import, currently `numpy`), and known unsupported packages such as `torch`.
+
+Before `ExperimentRunner` launches, generated code is AST-checked:
+
+- stdlib, `numpy`, and starter modules `data` / `baseline` / `evaluate` are allowed
+- other third-party imports (for example `import torch`) become `unsupported_dependency` and trigger bounded repair, not a subprocess `ImportError`
+- `try: import torch except ImportError: ...` style silent FM/parent fallback is `silent_dependency_fallback` and is also repaired, never stored as a successful hypothesis test
+
+Traces record `research_validity`: `root` for the FM baseline, `hypothesis_tested` only when the runner actually executed the candidate, `not_executed` when preflight/parse rejected it. Execution `success` on the official evaluator is unchanged. A silent FM substitute must not count as evidence for the claimed method.
+
+Repair prompts tell the model to keep the original hypothesis and reimplement with NumPy when the blocked package was only an implementation choice.
+
 ## CLI
 
 ```powershell
@@ -85,4 +99,6 @@ Phase 3 was time-boxed onto `gemini-3.6-flash` (`--model gemini-3.6-flash --thin
 
 Machine-readable record: [`phase3_live_validation.json`](phase3_live_validation.json). Full traces stay under gitignored `runs/research/rs-20260830T095957Z-c4eebeaf/`.
 
-Session `rs-20260830T095957Z-c4eebeaf`: reused usable `fm-root`, 3 research calls, 0 repairs, 0 manual edits. Best remained `fm-root` (primary 0.6015). Iteration 2 failed (`import torch` missing). Iterations 2 and 3 did change direction from prior evidence, imperfectly: iteration 1 silently fell back to official FM when torch was absent, so its “no gain” was not a real BPR test.
+Session `rs-20260830T095957Z-c4eebeaf` is the **first pilot**, not a Phase 3 PASS. Iteration 1 reported harness success at primary 0.6015 identical to FM because the candidate caught missing `torch` and trained official FM. That is a semantic no-op, not a BPR result. Iteration 2 crashed on `import torch`. Iteration 3 ran a real BPR+BCE candidate (primary 0.5982). Environment-aware preflight was added after that pilot.
+
+Integrity acceptance session `rs-20260830T105206Z-2fb7f092` (`gemini-3.6-flash`, thinking medium): 3 executed research iterations, 0 repairs, 0 torch imports, 0 silent ImportError fallbacks. Iteration 2 (batch/lr schedule) and iteration 3 (3-seed FM bagging) actually changed the method; bagging is the new elite at primary 0.6021. Iteration 1 claimed soft labels but `data.load` rows have no `is_like` / `play_time_ms`, so labels stayed binary FM targets. Machine-readable copy: [`phase3_acceptance.json`](phase3_acceptance.json).

@@ -9,6 +9,7 @@ from research_agent.agent import ResearchAgent, UnusableRootError
 from research_agent.agent.constants import FM_ROOT_ID
 from research_agent.agent.fm_root import fm_root_spec
 from research_agent.llm import FakeProvider, LLMConfigError, LLMRateLimitError, LLMTransientError
+from experiment_helpers import CANDIDATE_SOURCE
 from research_helpers import make_proposal_payload, make_runner, mini_root_spec
 
 
@@ -353,3 +354,103 @@ def test_research_trace_redacts_key_value(tmp_path: Path, monkeypatch):
     dumped = agent.trace.path.read_text(encoding="utf-8") + str(run.summary)
     assert secret not in dumped
     assert "GEMINI_API_KEY=" not in dumped
+
+
+def _torch_source() -> str:
+    return "import torch\n" + CANDIDATE_SOURCE
+
+
+def _silent_fallback_source() -> str:
+    return (
+        "try:\n"
+        "    import torch\n"
+        "except ImportError:\n"
+        "    from baseline import FM\n"
+        + CANDIDATE_SOURCE
+    )
+
+
+def test_research_prompt_includes_environment(tmp_path: Path):
+    agent = _agent(tmp_path, [make_proposal_payload()], max_iterations=1)
+    agent.run()
+    prompt = agent.provider.calls[0].prompt
+    assert "allowed_third_party" in prompt
+    assert "numpy" in prompt
+    assert "torch" in prompt
+    assert "fail explicitly" in prompt.lower()
+
+
+def test_unsupported_torch_rejected_before_subprocess(tmp_path: Path):
+    runs = {"n": 0}
+    agent = _agent(
+        tmp_path,
+        [
+            make_proposal_payload(
+                hypothesis="BPR pairwise ranking with a PyTorch FM",
+                candidate_source=_torch_source(),
+            )
+        ],
+        max_iterations=1,
+        max_repairs=0,
+    )
+    original = agent.runner.run
+
+    def counted(spec):
+        runs["n"] += 1
+        return original(spec)
+
+    agent.runner.run = counted  # type: ignore[method-assign]
+    run = agent.run()
+    assert runs["n"] == 1
+    assert run.iterations[0].result is None
+    assert run.iterations[0].result_status == "invalid"
+    assert "unsupported_dependency" in (run.iterations[0].error or "")
+    assert "torch" in (run.iterations[0].error or "")
+    assert agent.runner.registry.peek("rs-test-001") is None
+    assert run.iterations[0].record.get("research_validity") == "not_executed"
+
+
+def test_unsupported_dependency_repair_context_preserves_hypothesis(tmp_path: Path):
+    torch_payload = make_proposal_payload(
+        hypothesis="BPR pairwise ranking with a PyTorch FM",
+        candidate_source=_torch_source(),
+    )
+    numpy_payload = make_proposal_payload(
+        hypothesis="BPR pairwise ranking implemented with NumPy",
+        mutation_summary="NumPy BPR, no torch",
+    )
+    agent = _agent(tmp_path, [torch_payload, numpy_payload], max_iterations=1, max_repairs=2)
+    run = agent.run()
+    assert run.iterations[0].result_status == "success"
+    assert run.iterations[0].repair_calls == 1
+    assert run.iterations[0].record.get("research_validity") == "hypothesis_tested"
+    assert agent.provider.calls[1].purpose == "repair"
+    repair = agent.provider.calls[1].prompt
+    assert "unsupported_dependency" in repair
+    assert "torch" in repair
+    assert "BPR pairwise ranking with a PyTorch FM" in repair
+    assert "Preserve the original hypothesis" in repair
+    assert "NumPy" in repair
+    assert "allowed_third_party" in repair
+
+
+def test_silent_fallback_is_not_valid_research_evidence(tmp_path: Path):
+    agent = _agent(
+        tmp_path,
+        [
+            make_proposal_payload(
+                hypothesis="PyTorch BPR; fall back to FM if torch missing",
+                candidate_source=_silent_fallback_source(),
+            )
+        ],
+        max_iterations=1,
+        max_repairs=0,
+    )
+    run = agent.run()
+    assert run.iterations[0].result_status == "invalid"
+    assert run.iterations[0].result is None
+    assert "silent_dependency_fallback" in (run.iterations[0].error or "")
+    assert agent.runner.registry.peek("rs-test-001") is None
+    assert agent.runner.registry.elite().spec.experiment_id == "fm-root"
+    assert run.iterations[0].record.get("research_validity") == "not_executed"
+

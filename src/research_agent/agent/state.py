@@ -18,6 +18,7 @@ from .constants import (
     ORGANIZER_DEAD_ENDS,
     ORGANIZER_PROMISING_CATEGORIES,
 )
+from .environment import EnvironmentCapabilities, discover_environment
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class ResearchState:
     promising_categories: list[str] = field(
         default_factory=lambda: list(ORGANIZER_PROMISING_CATEGORIES)
     )
+    environment: EnvironmentCapabilities = field(default_factory=discover_environment)
 
     def to_dict(self) -> dict[str, Any]:
         return sanitize(
@@ -64,9 +66,12 @@ class ResearchState:
                 "llm_usage": dict(self.llm_usage),
                 "organizer_dead_ends": list(self.organizer_dead_ends),
                 "promising_categories": list(self.promising_categories),
+                "environment": self.environment.to_dict(),
                 "guidance": (
                     "These organizer notes are research context, not a script. "
                     "Decide the next experiment from evidence. "
+                    "Stay inside environment.allowed_third_party and the Python standard library. "
+                    "If the method cannot run, fail explicitly; never silently substitute FM or the parent. "
                     "Return one complete candidate Python file. Do not modify evaluate.py. "
                     "Write ordered scores for the requested split only."
                 ),
@@ -90,6 +95,8 @@ def build_research_state(
     rejected_directions: list[str] | None = None,
     top_k: int = 5,
     recent_k: int = 5,
+    repo_root: Path | None = None,
+    environment: EnvironmentCapabilities | None = None,
 ) -> ResearchState:
     elite_entry = registry.elite()
     elite = _summarize_entry(elite_entry) if elite_entry is not None else None
@@ -135,6 +142,7 @@ def build_research_state(
         rejected_directions=list(rejected_directions or []),
         lineage=lineage[-20:],
         llm_usage=ledger.to_dict(),
+        environment=environment or discover_environment(repo_root),
     )
 
 

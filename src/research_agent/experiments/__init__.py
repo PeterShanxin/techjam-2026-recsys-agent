@@ -1,6 +1,6 @@
 """Phase 2 experiment harness: spec, runner, result, registry."""
 
-from .errors import ForbiddenTestSplit, RegistryError, SpecError
+from .errors import ExperimentIdCollision, ForbiddenTestSplit, RegistryError, SpecError
 from .registry import ExperimentRegistry, RegistryEntry
 from .result import ExperimentResult, FailureInfo, Metrics
 from .runner import ExperimentRunner
@@ -19,6 +19,7 @@ __all__ = [
     "Metrics",
     "RegistryEntry",
     "RegistryError",
+    "ExperimentIdCollision",
     "ForbiddenTestSplit",
     "SpecError",
 ]

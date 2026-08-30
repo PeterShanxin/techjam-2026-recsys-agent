@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from .errors import RegistryError
+from .errors import ExperimentIdCollision, RegistryError
 from .result import ExperimentResult
 from .spec import ExperimentSpec
 from .splits import RESEARCH_SPLIT
@@ -87,7 +87,7 @@ class ExperimentRegistry:
         ).fetchone()
         if existing:
             if existing["spec_hash"] != spec.spec_hash:
-                raise RegistryError(
+                raise ExperimentIdCollision(
                     f"experiment_id {spec.experiment_id!r} already exists with a different spec_hash"
                 )
             return self.get(spec.experiment_id)
@@ -162,6 +162,15 @@ class ExperimentRegistry:
         )
         self._conn.commit()
         return self.get(result.experiment_id)
+
+    def peek(self, experiment_id: str) -> RegistryEntry | None:
+        row = self._conn.execute(
+            "SELECT 1 FROM experiments WHERE experiment_id = ?",
+            (experiment_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self.get(experiment_id)
 
     def get(self, experiment_id: str) -> RegistryEntry:
         row = self._conn.execute(

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from research_agent.experiments import (
+    ExperimentIdCollision,
     ExperimentRegistry,
     ExperimentResult,
     FailureInfo,
@@ -176,3 +177,21 @@ def test_result_requires_existing_spec(tmp_path: Path):
     registry = _registry(tmp_path)
     with pytest.raises(RegistryError, match="unknown"):
         registry.upsert_result(_success("missing", 0.1))
+
+
+def test_insert_spec_collision_does_not_mutate(tmp_path: Path):
+    registry = _registry(tmp_path)
+    original = make_spec(experiment_id="same-id", parameters={"x": 1}, notes="keep")
+    registry.insert_spec(original)
+    registry.upsert_result(_success("same-id", 0.42))
+    registry.mark_decision("same-id", "accepted")
+    before = registry.get("same-id")
+    with pytest.raises(ExperimentIdCollision, match="different spec_hash"):
+        registry.insert_spec(make_spec(experiment_id="same-id", parameters={"x": 2}))
+    after = registry.get("same-id")
+    assert after.spec.spec_hash == before.spec.spec_hash
+    assert after.spec.notes == "keep"
+    assert after.result is not None
+    assert after.result.metrics.primary == pytest.approx(0.42)
+    assert after.decision == "accepted"
+    assert after.created_at == before.created_at

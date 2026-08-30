@@ -68,7 +68,7 @@ Parent rules:
 python <entrypoint> \
   --data-dir <path> \
   --split valid \
-  --output-scores <run_dir>/scores.npy \
+  --output-scores <attempt_dir>/scores.npy \
   --seed <seed> \
   --config <run_dir>/config.json
 ```
@@ -79,16 +79,19 @@ Example candidate: `src/research_agent/recommenders/random_scorer.py`.
 
 ## ExperimentRunner
 
-1. Validate spec and split policy
-2. Create `runs/<experiment_id>/`
-3. Persist `spec.json` and `config.json`
-4. Fingerprint source + config
-5. Run candidate as a subprocess with timeout
-6. Capture stdout / stderr / return code
-7. Load and reject bad scores (missing, wrong length/shape, NaN/Inf)
-8. Load the official split via `data.load()`
-9. Call only `evaluate(user_ids, labels, scores)`
-10. Write `ExperimentResult` and persist to SQLite
+1. Reject `experiment_id` collision **before** any disk/registry mutation. Identity is immutable once registered.
+2. Insert spec (same `spec_hash` rerun is allowed; different hash is not)
+3. Create `runs/<experiment_id>/` and write identity files from the **registered** spec
+4. Start a fresh `attempts/<attempt_id>/` and clear published execution artifacts (`scores.npy`, logs, metadata)
+5. Fingerprint source + config
+6. Run candidate as a subprocess with `--output-scores` pointing at the **attempt** file
+7. Capture stdout / stderr / return code
+8. Load only that attempt's scores; reject missing, wrong length/shape, NaN/Inf, or leftover published files
+9. Load the official split via `data.load()`
+10. Call only `evaluate(user_ids, labels, scores)`
+11. Write `ExperimentResult` and persist to SQLite
+
+A later attempt that exits 0 without writing scores is `invalid`. It never evaluates a previous `scores.npy`.
 
 Isolation is filesystem + subprocess + timeout. Not a security sandbox.
 
@@ -146,8 +149,14 @@ runs/<experiment_id>/
   metadata.json
   stdout.log
   stderr.log
-  scores.npy
+  scores.npy          # published only if THIS attempt wrote scores
   result.json
+  attempts/<attempt_id>/
+    scores.npy
+    stdout.log
+    stderr.log
+    metadata.json
+    result.json
 runs/registry.sqlite
 ```
 

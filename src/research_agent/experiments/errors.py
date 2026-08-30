@@ -11,3 +11,7 @@ class ForbiddenTestSplit(ValueError):
 
 class RegistryError(ValueError):
     """Registry operation failed."""
+
+
+class ExperimentIdCollision(RegistryError):
+    """experiment_id already registered with a different spec_hash."""

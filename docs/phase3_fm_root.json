@@ -1,0 +1,22 @@
+{
+  "phase": 3,
+  "record": "fm-root",
+  "status": "success",
+  "command": ".venv\\Scripts\\python.exe scripts\\run_experiment.py --spec configs\\experiments\\fm_valid.json",
+  "experiment_id": "fm-root",
+  "origin": "baseline",
+  "evaluation_split": "valid",
+  "seed": 0,
+  "metrics": {
+    "GAUC": 0.6671,
+    "nDCG@5": 0.5358,
+    "primary": 0.6015
+  },
+  "wall_seconds": 83.638,
+  "match_phase1_valid_fm": true,
+  "gemini_live": {
+    "smoke": "blocked",
+    "autonomous_iterations": "blocked",
+    "reason": "GEMINI_API_KEY unset in environment"
+  }
+}

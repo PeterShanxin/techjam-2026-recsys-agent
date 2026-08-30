@@ -12,7 +12,7 @@ The architecture is an **LLM-guided evolutionary research system**:
 - The **Evolution Controller** owns deterministic fitness, selection, elitism, diversity, lineage and resource-budget enforcement.
 - The evolutionary layer is intentionally lightweight and hypothesis-driven, not brute-force AutoML.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the frozen responsibility split and staged V1-V3 design. Phase 2 harness contract: [`docs/EXPERIMENT_HARNESS.md`](docs/EXPERIMENT_HARNESS.md).
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the frozen responsibility split and staged V1-V3 design. Phase 2 harness: [`docs/EXPERIMENT_HARNESS.md`](docs/EXPERIMENT_HARNESS.md). Phase 3 sequential agent: [`docs/RESEARCH_AGENT.md`](docs/RESEARCH_AGENT.md).
 
 ## Benchmark
 
@@ -61,6 +61,8 @@ Python 3.9+ is required by the official starter kit.
 python scripts/run_baseline.py --model random --seed 0
 python scripts/run_baseline.py --model fm --seed 0
 python scripts/run_experiment.py --spec configs/experiments/random_valid.json
+python scripts/run_experiment.py --spec configs/experiments/fm_valid.json
+python scripts/run_research_agent.py --iterations 3 --model gemini-3.7-flash --thinking medium
 ```
 
 The dataset is intentionally not committed. See `starter/kuairand/README.md` for download instructions and [`docs/BASELINE_REPRODUCTION.md`](docs/BASELINE_REPRODUCTION.md) for the Phase 1 reproduction record.
@@ -72,7 +74,7 @@ The dataset is intentionally not committed. See `starter/kuairand/README.md` for
 - [x] Freeze Research Agent vs Evolution Controller responsibility split
 - [x] Reproduce official FM baseline
 - [x] Define exact experiment schema and registry
-- [ ] Implement sequential autonomous research loop
+- [x] Implement sequential autonomous research loop
 - [ ] Add evolutionary branching
 - [ ] Add semantic crossover
 - [ ] Run controlled benchmark experiments

@@ -164,4 +164,4 @@ All of the above are gitignored.
 
 ## Phase 3 notes
 
-ResearchAgent should emit `ExperimentSpec` JSON and call `ExperimentRunner.run`. Read evidence from `ExperimentResult` + `ExperimentRegistry.rank_validation()` / `elite()`. Do not score candidates inside generated code. Do not set `evaluation_split="test"` during search.
+Implemented in [`RESEARCH_AGENT.md`](RESEARCH_AGENT.md). The agent emits `ExperimentSpec` JSON and calls `ExperimentRunner.run`. Evidence comes from `ExperimentResult` plus `ExperimentRegistry.rank_validation()` / `elite()`. Generated code does not own official metrics. Search stays on `evaluation_split="valid"`.

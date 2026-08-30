@@ -193,9 +193,13 @@ SQLite primitives: persist spec/result, spec-hash lookup, lineage/ancestry, deci
 
 Default and autonomous-search split is `valid`. Test requires `allow_test_split` or `allow_test=True`. Elite ranking never uses test.
 
+### Phase 3 sequential Research Agent (implemented)
+
+See [`docs/RESEARCH_AGENT.md`](RESEARCH_AGENT.md).
+
+Gemini 3.7 Flash (`google-genai`) owns one structured research call per iteration: reflection plus the next candidate source. The Phase 2 runner/registry/evaluator stay deterministic. Repair calls are bounded and counted. Evolutionary population search is Phase 4.
+
 ### Still later
 
-- LLM provider abstraction and token accounting (Phase 3)
-- ResearchAgent / EvolutionController
-- Real fitness beyond validation elite (Phase 4)
+- Evolution Controller, population, diversity, semantic crossover (Phase 4)
 

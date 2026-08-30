@@ -1,0 +1,10 @@
+flowchart LR
+  RS[Research state] --> GA[Gemini Research Agent]
+  GA --> SM[Semantic mutation / crossover]
+  SM --> CAND[Generated candidate]
+  CAND --> ER[ExperimentRunner]
+  ER --> EV[Official evaluate.py]
+  EV --> REG[Registry]
+  REG --> EC[Evolution Controller]
+  EC --> POP[Population / elites / budgets]
+  POP --> RS

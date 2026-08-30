@@ -75,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-fill", action="store_true")
     ap.add_argument("--sequential-control", action="store_true")
     ap.add_argument(
+        "--competition",
+        action="store_true",
+        help="Official Track 2 budgets: 50 new evaluations, 6h wall, epsilon=0.002, patience=3",
+    )
+    ap.add_argument(
         "--provider",
         default="gemini",
         choices=("gemini", "fake"),
@@ -104,38 +109,57 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"model       {args.model}")
     print(f"thinking    {thinking}")
-    print(
-        f"population  {args.population_size} elite={args.elite_count} "
-        f"generations={args.generations} max_new={args.max_new_evaluations}"
-    )
     print(f"data        {data_dir}")
     print(f"runs        {runs_dir}")
+    if args.competition:
+        config = EvolutionConfig.competition(
+            population_size=args.population_size,
+            elite_count=args.elite_count,
+            include_ensemble_seed=not args.no_ensemble_seed,
+            fill_to_size_on_init=not args.no_fill,
+            token_budget=args.token_budget,
+            wall_clock_seconds=args.wall_clock if args.wall_clock is not None else 21600.0,
+            experiment_timeout_seconds=args.timeout,
+            max_repairs=args.max_repairs,
+        )
+        agent_wall = config.wall_clock_seconds
+        agent_iters = config.max_new_evaluations
+    else:
+        config = EvolutionConfig(
+            population_size=args.population_size,
+            elite_count=args.elite_count,
+            generations=args.generations,
+            max_new_evaluations=args.max_new_evaluations,
+            include_ensemble_seed=not args.no_ensemble_seed,
+            fill_to_size_on_init=not args.no_fill,
+            token_budget=args.token_budget,
+            wall_clock_seconds=args.wall_clock,
+            experiment_timeout_seconds=args.timeout,
+            max_repairs=args.max_repairs,
+        )
+        agent_wall = args.wall_clock
+        agent_iters = args.max_new_evaluations
+
+    print(
+        f"population  {config.population_size} elite={config.elite_count} "
+        f"generations={config.generations} max_new={config.max_new_evaluations}"
+    )
+    if args.competition:
+        print("budget      competition (50 evals, 6h, epsilon=0.002, patience=3)")
 
     agent = ResearchAgent(
         provider=provider,
         runner=runner,
         model=args.model,
         thinking_level=thinking,
-        max_iterations=args.max_new_evaluations,
+        max_iterations=agent_iters,
         max_repairs=args.max_repairs,
-        wall_clock_seconds=args.wall_clock,
+        wall_clock_seconds=agent_wall,
         manual_interventions=args.manual_interventions,
         emit=_print_event,
         experiment_timeout_seconds=args.timeout,
     )
     print(f"session     {agent.session_id}")
-    config = EvolutionConfig(
-        population_size=args.population_size,
-        elite_count=args.elite_count,
-        generations=args.generations,
-        max_new_evaluations=args.max_new_evaluations,
-        include_ensemble_seed=not args.no_ensemble_seed,
-        fill_to_size_on_init=not args.no_fill,
-        token_budget=args.token_budget,
-        wall_clock_seconds=args.wall_clock,
-        experiment_timeout_seconds=args.timeout,
-        max_repairs=args.max_repairs,
-    )
     controller = EvolutionController(agent=agent, config=config)
     try:
         run = controller.run()

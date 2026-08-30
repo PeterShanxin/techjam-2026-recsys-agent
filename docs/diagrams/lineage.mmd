@@ -1,0 +1,17 @@
+flowchart TB
+  ROOT["fm-root\nprimary 0.6014688\nbaseline"]
+  ENS["fm-ensemble-3seed\nprimary 0.6021109\nstarting elite"]
+  N001["001 logit-space 5-seed\nprimary 0.5532\nnegative"]
+  N002["002 soft labels\nprimary 0.5884\nnegative"]
+  N003["003 percentile-rank 5-seed\nprimary 0.6019"]
+  WIN["004 SWA + 7-seed\nprimary 0.6023186\nWINNER"]
+  X005["005 crossover\nimplementation failure\nnot elite"]
+  X006["006 crossover SWA blend\nprimary 0.6020\nworse than 004"]
+
+  ROOT --> ENS
+  ROOT --> N002
+  ENS --> N001
+  ENS --> N003
+  N003 --> WIN
+  WIN --> X005
+  WIN --> X006

@@ -1,88 +1,118 @@
-# TikTok TechJam 2026 - Autonomous ML Research Agent for Recommender Systems
+# TikTok TechJam 2026 — Autonomous ML research agent
 
-Track 2 submission workspace for TikTok TechJam 2026.
+**Track 2.** KuaiRand-Pure within-user ranking (GAUC, nDCG@5, primary = mean of both).
 
-## Goal
+Gemini acts as a **semantic research operator**. A **deterministic controller** owns experiment survival, diversity, lineage, and budgets.
 
-Build an autonomous research agent that can inspect a recommender-system task, propose hypotheses, modify experiment code, run and evaluate experiments, reflect on results, and iteratively improve the model with minimal human intervention.
+This is not generic AutoML.
 
-The architecture is an **LLM-guided evolutionary research system**:
+## 60-second brief
 
-- The **Research Agent** owns semantic ML reasoning, hypothesis generation, meaningful mutation and conditional crossover proposals.
-- The **Evolution Controller** owns deterministic fitness, selection, elitism, diversity, lineage and resource-budget enforcement.
-- The evolutionary layer is intentionally lightweight and hypothesis-driven, not brute-force AutoML.
+1. **Problem.** Recommender research is a slow human loop: hypothesize, code, train, read official metrics, repeat.
+2. **Novelty.** The LLM proposes hypotheses, mutations, crossovers, and repairs. It does **not** pick elites. The Evolution Controller does **not** invent ML ideas.
+3. **How it works.** Research state → Gemini → generated candidate → isolated runner → official `evaluate.py` → registry → population / elite / budgets → next state.
+4. **Evidence (validation only).** Under the same priors and six new evaluations, evolutionary search found an extra improvement; matched sequential search did not beat the starting elite. We do **not** claim statistical significance.
+5. **Reproduce.** `pytest` is free. Live Gemini needs `GEMINI_API_KEY`. Commands: [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md).
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the frozen responsibility split and staged V1-V3 design. Phase 2 harness: [`docs/EXPERIMENT_HARNESS.md`](docs/EXPERIMENT_HARNESS.md). Phase 3 sequential agent: [`docs/RESEARCH_AGENT.md`](docs/RESEARCH_AGENT.md). Phase 4 evolution: [`docs/EVOLUTION.md`](docs/EVOLUTION.md).
-
-## Benchmark
-
-The official starter benchmark uses **KuaiRand-Pure** and evaluates within-user ranking with:
-
-- GAUC
-- nDCG@5
-- Primary score = mean(GAUC, nDCG@5)
-
-Official FM test baseline: **0.5946 primary**.
-
-The unmodified organizer starter kit is kept under `starter/kuairand/` for reproducibility and attribution.
-
-## Repository layout
-
-```text
-configs/                    Experiment and agent configs
-docs/                       Architecture and design notes
-notebooks/                  Exploratory notebooks only
-scripts/                    Entry points and utility scripts
-src/research_agent/
-  agent/                     Research planning, reflection, orchestration
-  evolution/                 Selection, mutation, crossover, diversity
-  experiments/               Experiment specs, runner, registry
-  recommenders/              Candidate recommender implementations
-  evaluation/                Metric adapters and result analysis
-starter/kuairand/            Official KuaiRand-Pure starter kit
-tests/                       Automated tests
+```mermaid
+flowchart LR
+  RS[Research state] --> GA[Gemini Research Agent]
+  GA --> SM[Semantic mutation / crossover]
+  SM --> CAND[Generated candidate]
+  CAND --> ER[ExperimentRunner]
+  ER --> EV[Official evaluate.py]
+  EV --> REG[Registry]
+  REG --> EC[Evolution Controller]
+  EC --> POP[Population / elites / budgets]
+  POP --> RS
 ```
 
-## Development principles
+## Results
 
-1. Preserve the official evaluator and task definition.
-2. Make every experiment reproducible and machine-readable.
-3. Track hypothesis, code/config diff, metrics, runtime, token usage, lineage and outcome.
-4. Prefer autonomous research decisions over manual intervention.
-5. Let the LLM propose meaningful semantic changes; keep selection and budgets deterministic.
-6. Use evolutionary search only where it improves search quality - not as brute-force hyperparameter tuning.
-7. Optimize for the official ranking metrics and compute efficiency.
+Exact values: [`docs/evidence/canonical_benchmark.json`](docs/evidence/canonical_benchmark.json). Display strings below are rounded from that file.
 
-## Quick start
+| Method | Priors | New evals | Best primary | Δ vs FM | Δ vs starting elite |
+| --- | --- | --- | --- | --- | --- |
+| Reproduced FM | none | 0 | **0.6014688** | 0 | — |
+| Phase 3 sequential (3-seed bagging) | FM | 3 | **0.6021109** | +0.0006422 | +0.0006422 |
+| Phase 4 matched sequential | FM + 3-seed | 6 | **0.6021109** | +0.0006422 | 0 |
+| Phase 4 evolutionary search | FM + 3-seed | 6 | **0.6023186** | +0.0008499 | **+0.0002077** |
 
-Python 3.9+ is required by the official starter kit.
+Under the same prior knowledge and six new experiment evaluations, evolutionary search found an additional validation improvement while the matched sequential search did not surpass the starting elite.
 
-```bash
-python scripts/run_baseline.py --model random --seed 0
-python scripts/run_baseline.py --model fm --seed 0
-python scripts/run_experiment.py --spec configs/experiments/random_valid.json
-python scripts/run_experiment.py --spec configs/experiments/fm_valid.json
-python scripts/run_research_agent.py --iterations 3 --model gemini-3.7-flash --thinking medium
-python scripts/run_evolution.py --model gemini-3.6-flash --thinking medium --generations 2 --max-new-evaluations 6
+Final candidate: 7-seed official FM, top-2 checkpoint SWA per seed, raw probability average. Frozen in-repo as `src/research_agent/recommenders/fm_swa7_ensemble_scorer.py`. Same-seed valid re-run matched **0.6023186** exactly.
+
+Phase 4 evolution resources: 6 LLM calls, 139830 tokens, ~33 min, 0 GPU-hours, **0 manual interventions**. Live model: Gemini 3.6 Flash (intended: 3.7 Flash; Developer API returned high-demand).
+
+```mermaid
+flowchart TB
+  ROOT["fm-root 0.6014688"]
+  ENS["3-seed ensemble 0.6021109"]
+  N001["001 logit avg — negative"]
+  N002["002 soft labels — negative"]
+  N003["003 percentile rank"]
+  WIN["004 SWA+7-seed 0.6023186"]
+  X005["005 crossover — impl. fail"]
+  X006["006 crossover — worse"]
+  ROOT --> ENS
+  ROOT --> N002
+  ENS --> N001
+  ENS --> N003
+  N003 --> WIN
+  WIN --> X005
+  WIN --> X006
 ```
 
-The dataset is intentionally not committed. See `starter/kuairand/README.md` for download instructions and [`docs/BASELINE_REPRODUCTION.md`](docs/BASELINE_REPRODUCTION.md) for the Phase 1 reproduction record.
+## Reproduce
 
-## Status
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install "numpy>=1.26,<3" pytest
+.\.venv\Scripts\python.exe -m pytest tests -q
+```
 
-- [x] Track selected
-- [x] Official starter kit preserved
-- [x] Freeze Research Agent vs Evolution Controller responsibility split
-- [x] Reproduce official FM baseline
-- [x] Define exact experiment schema and registry
-- [x] Implement sequential autonomous research loop
-- [x] Live-validate sequential loop on KuaiRand valid (`gemini-3.6-flash`; intended model remains `gemini-3.7-flash`)
-- [x] Add evolutionary branching
-- [x] Add semantic crossover
-- [ ] Run controlled benchmark experiments
-- [ ] Generate final submission checkpoint and CSV
-- [ ] Record 3-minute demo
+`pytest` spends **no** API money.
 
-## Attribution
+KuaiRand-Pure is not in git. Download steps and every paid vs free command: [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md).
 
-The KuaiRand-Pure starter files under `starter/kuairand/` were provided by the TikTok TechJam 2026 organizers for Track 2.
+Frozen validation candidate (CPU, no Gemini, several minutes):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid
+```
+
+Official test CSV **after** freeze only:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split test --allow-test
+.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-swa7-ensemble-test\scores.npy --split test --output submission.csv
+```
+
+Do not use test scores to select experiments. `submission.csv` is gitignored.
+
+## Limitations
+
+- Matched pilot is six new evaluations, not 50.
+- Primary delta vs the starting elite is +0.0002077, below organizer ε=0.002. No significance claim.
+- NumPy-only environment blocked silent torch/deep-model “wins”.
+- Crossover did not beat the best mutation in the first live pilot.
+- Gemini 3.7 Flash was capacity-blocked on the Developer API; live evidence used 3.6 Flash. That is provider resilience, not hidden human steering.
+- Longer search might find more. We did not burn a 6-hour run for a likely still-sub-epsilon gain. The software still enforces 50 evals / 6h / ε=0.002 / patience=3.
+
+The contribution is the **auditable research system**, not a huge leaderboard jump.
+
+## Docs
+
+| | |
+| --- | --- |
+| Architecture | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Benchmark table | [`docs/BENCHMARK.md`](docs/BENCHMARK.md) |
+| Evidence pack | [`docs/evidence/`](docs/evidence/) |
+| Evolution | [`docs/EVOLUTION.md`](docs/EVOLUTION.md) |
+| Failure recovery | [`docs/FAILURE_RECOVERY.md`](docs/FAILURE_RECOVERY.md) |
+| Demo script | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) |
+| Devpost draft | [`docs/DEVPOST.md`](docs/DEVPOST.md) |
+| Submission checklist | [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md) |
+| Testing | [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md) |
+
+Official starter: `starter/kuairand/` (organizer files; do not edit `evaluate.py`). Fingerprint: `ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de`.

@@ -128,3 +128,46 @@ def test_sequential_control_uses_independent_runs_dir(tmp_path, monkeypatch):
     payload = json.loads((tmp_path / "sequential_control.json").read_text(encoding="utf-8"))
     assert payload["starting_seeds"] == ["fm-root", "fm-ensemble-3seed"]
     assert payload["new_evaluations"] == 3
+
+
+def test_competition_flag_uses_official_envelope(tmp_path, monkeypatch):
+    cli = _load_cli()
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    seen = {}
+
+    class DummyRun:
+        stop_reason = "wall_clock_budget"
+        evaluated_offspring = 0
+        elites = []
+        population = type("P", (), {"members": []})()
+        trace_dir = tmp_path
+        summary = {"lineage": ""}
+
+    class DummyController:
+        def __init__(self, **kwargs):
+            seen["config"] = kwargs.get("config")
+
+        def run(self):
+            return DummyRun()
+
+    class DummyAgent:
+        session_id = "ev-comp"
+
+        def __init__(self, **kwargs):
+            DummyAgent.max_iterations = kwargs.get("max_iterations")
+            DummyAgent.wall_clock_seconds = kwargs.get("wall_clock_seconds")
+
+    monkeypatch.setattr(cli, "ResearchAgent", DummyAgent)
+    monkeypatch.setattr(cli, "EvolutionController", DummyController)
+    monkeypatch.setattr(cli, "ExperimentRunner", lambda **_kwargs: object())
+    rc = cli.main(["--provider", "fake", "--competition"])
+    assert rc == 0
+    config = seen["config"]
+    assert config.max_new_evaluations == 50
+    assert config.generations == 50
+    assert config.wall_clock_seconds == 21600.0
+    assert config.convergence_epsilon == 0.002
+    assert config.convergence_patience == 3
+    assert DummyAgent.max_iterations == 50
+    assert DummyAgent.wall_clock_seconds == 21600.0

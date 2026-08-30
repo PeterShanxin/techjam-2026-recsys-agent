@@ -85,3 +85,11 @@ Or via the evolution CLI (runs evolution first, then a fresh sequential registry
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_evolution.py --model gemini-3.6-flash --thinking medium --sequential-control
 ```
+
+Official Track 2 envelope (do not spend this live unless a human decides it is worth it):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_evolution.py --provider fake --competition
+```
+
+`EvolutionConfig.competition()` sets max 50 new evaluations, 6h wall-clock, ε=0.002, patience=3. FakeProvider tests prove stop reasons without waiting six hours.

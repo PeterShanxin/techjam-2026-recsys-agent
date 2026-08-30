@@ -47,7 +47,9 @@ The controller does **not** invent ML hypotheses.
 | 5 | duration_ms |
 | 6 | long_view (official target) |
 
-`is_like`, `play_time_ms`, and other aux log columns are **not** on those tuples. A proposal that claims them without reading the raw CSVs is rejected before execution. That blocks the Phase 3 soft-label no-op from counting as evidence.
+`is_like`, `play_time_ms`, and other aux log columns are **not** on those tuples. A proposal that claims them is allowed only if the candidate actually reads raw CSVs (`csv.DictReader` or `csv.reader`, a raw filename, and the claimed field in source). Filename comments or `data.load()` snippets are not enough. That blocks the Phase 3 soft-label no-op from counting as evidence.
+
+Same source as a parent is a semantic no-op only when parameters and seed also match. A parameter-only mutation still counts as `hypothesis_tested`.
 
 ## Pilot defaults
 
@@ -72,7 +74,7 @@ Intended production model remains `gemini-3.7-flash`. Pass `--model` explicitly 
 
 Traces: `runs/evolution/<session>/summary.json`, `population.json`, `generations.jsonl`, `tree.txt`.
 
-Matched sequential control (same new-evaluation count, no population):
+Matched sequential control (same new-evaluation count, no population). Control uses an independent registry under `runs/sequential-control/` so it cannot see evolution elites:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_evolution.py --model gemini-3.6-flash --thinking medium --sequential-control

@@ -85,7 +85,7 @@ Smoke (requires `GEMINI_API_KEY`):
 
 Traces: `runs/research/<session-id>/trace.jsonl`, `report.md`, `summary.json`.
 
-ResearchState includes a compact **data contract** derived from `starter/kuairand/data.py`: `data.load()` 7-tuples, encode fields, official `long_view` target, and columns that are **not** on the loader (including `is_like` and `play_time_ms`). A proposal that claims those fields without reading raw CSVs is rejected before the runner. See [`EVOLUTION.md`](EVOLUTION.md) for the Phase 4 controller.
+ResearchState includes a compact **data contract** derived from `starter/kuairand/data.py`: `data.load()` 7-tuples, encode fields, official `long_view` target, and columns that are **not** on the loader (including `is_like` and `play_time_ms`). A proposal that claims those fields is rejected unless the candidate actually reads the raw CSVs (`csv.DictReader` / `csv.reader`, a raw filename, and the claimed field in source). Filename comments are not enough. See [`EVOLUTION.md`](EVOLUTION.md) for the Phase 4 controller.
 
 ## Live validation
 

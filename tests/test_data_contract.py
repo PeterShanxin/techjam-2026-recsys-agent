@@ -172,6 +172,31 @@ def test_loader_only_candidate_is_allowed(tmp_path: Path):
     )
 
 
+def test_filename_comment_does_not_bypass_data_contract(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = (
+        CANDIDATE_SOURCE
+        + "\n# log_standard_4_08_to_4_21_pure.csv user_features_pure.csv\n"
+        + "# video_features_basic_pure.csv\n"
+    )
+    proposal = make_proposal(
+        hypothesis="Soft labels from is_like even though this still uses data.load().",
+        expected_mechanism="Blend long_view with is_like from the named log_standard file.",
+        candidate_source=src,
+        required_data_fields=["is_like"],
+    )
+    with pytest.raises((SafetyError, DataContractError), match="unavailable_data_field"):
+        validate_proposal_data_claims(proposal, discover_data_contract())
+    with pytest.raises(SafetyError, match="unavailable_data_field"):
+        validate_candidate_source(
+            src,
+            dest,
+            root,
+            proposal=proposal,
+            data_contract=discover_data_contract(),
+        )
+
+
 def test_raw_csv_reader_may_claim_like_column(tmp_path: Path):
     dest, root = _dest(tmp_path)
     src = (

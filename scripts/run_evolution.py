@@ -156,10 +156,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.sequential_control:
         control_n = max(1, run.evaluated_offspring)
         print("")
-        print(f"=== sequential control ({control_n} iterations) ===")
+        print(f"=== sequential control ({control_n} iterations, independent registry) ===")
+        control_dir = runs_dir / "sequential-control"
+        control_runner = ExperimentRunner(
+            repo_root=ROOT,
+            runs_dir=control_dir,
+            data_dir=data_dir,
+            allow_test=False,
+        )
         seq = ResearchAgent(
             provider=provider,
-            runner=runner,
+            runner=control_runner,
             model=args.model,
             thinking_level=thinking,
             max_iterations=control_n,

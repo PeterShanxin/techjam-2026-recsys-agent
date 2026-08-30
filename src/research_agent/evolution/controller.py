@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from research_agent.agent.loop import IterationOutcome, ResearchAgent
+from research_agent.agent.root import UnusableRootError, is_usable_root_result
 from research_agent.agent.session import experiment_id_for
 from research_agent.agent.state import build_research_state
 from research_agent.experiments import ExperimentSpec
@@ -116,6 +117,10 @@ class EvolutionController:
 
     def _initialize(self) -> Population:
         root = self.agent.ensure_root()
+        if not is_usable_root_result(root.result):
+            raise UnusableRootError(
+                f"research root {root.experiment_id} is not a successful validation result"
+            )
         root_member = self._member_from_root(root)
         self.all_members.append(root_member)
         members = [root_member]
@@ -212,9 +217,18 @@ class EvolutionController:
                 left, right = pair
                 proposal = self._ask("crossover", generation, population, (left, right), experiment_id)
                 if proposal is None:
-                    self._last_spawn_kind = "empty"
-                    return None
-                if proposal.crossover_compatible is False:
+                    self.operator_decisions.append(
+                        SelectionDecision(
+                            generation=generation,
+                            operator="crossover",
+                            parent_ids=(left.experiment_id, right.experiment_id),
+                            reason="crossover_proposal_failed",
+                            fallback="mutation",
+                        ).to_dict()
+                    )
+                    operator = "mutation"
+                    experiment_id = self._next_id()
+                elif proposal.crossover_compatible is False:
                     self.operator_decisions.append(
                         SelectionDecision(
                             generation=generation,
@@ -392,11 +406,17 @@ class EvolutionController:
         self.agent.ledger.add_experiment(status=result.status, wall_seconds=result.wall_seconds)
         self._evaluated += 1
         parent_source_all = parent_sources
+        parent_entry = self.agent.runner.registry.peek(parent_ids[0]) if parent_ids else None
+        parent_spec = None if parent_entry is None else parent_entry.spec
         validity = _classify_validity(
             result.status,
             proposal.candidate_source,
             parent_source_all,
             executed=True,
+            child_parameters=dict(proposal.experiment_parameters),
+            child_seed=proposal.seed,
+            parent_parameters=dict(parent_spec.parameters) if parent_spec is not None else {},
+            parent_seed=None if parent_spec is None else parent_spec.seed,
         )
         if validity == "semantic_noop":
             self.agent.runner.registry.mark_decision(experiment_id, "rejected")
@@ -540,16 +560,23 @@ class EvolutionController:
             members, self.config.elite_count, efficiency_penalty=self.config.efficiency_penalty
         )
         elite_ids = {item.experiment_id for item in elites}
-        marked = []
+        marked_elites = []
+        marked_rest = []
+        by_id = {item.experiment_id: item for item in members}
+        for elite in elites:
+            member = by_id[elite.experiment_id]
+            marked_elites.append(member.with_updates(selection="elite", fitness=elite.fitness))
         for member in members:
-            selection = "elite" if member.experiment_id in elite_ids else "active"
+            if member.experiment_id in elite_ids:
+                continue
+            selection = "active"
             if member.research_validity == "semantic_noop":
                 selection = "rejected_noop"
             elif not member.scientific_evidence and member.origin != "baseline":
                 if member.status != "success":
                     selection = "rejected_invalid"
-            marked.append(member.with_updates(selection=selection))
-        return marked
+            marked_rest.append(member.with_updates(selection=selection))
+        return marked_elites + marked_rest
 
     def _update_convergence(self, population: Population) -> None:
         ranked = rank_members(population.members, efficiency_penalty=self.config.efficiency_penalty)
@@ -571,7 +598,14 @@ class EvolutionController:
     def _record_generation(
         self, generation: int, population: Population, decisions: list[dict[str, Any]]
     ) -> None:
-        elites = [item.experiment_id for item in population.members if item.selection == "elite"]
+        elites = [
+            item.experiment_id
+            for item in select_elites(
+                population.members,
+                self.config.elite_count,
+                efficiency_penalty=self.config.efficiency_penalty,
+            )
+        ]
         ranked = rank_members(population.members, efficiency_penalty=self.config.efficiency_penalty)
         best = None if not ranked else ranked[0].fitness
         prev = None if not self.generation_records else self.generation_records[-1].best_fitness
@@ -625,7 +659,11 @@ class EvolutionController:
         )
 
     def _finish(self, population: Population) -> EvolutionRun:
-        elites = [item for item in population.members if item.selection == "elite"]
+        elites = select_elites(
+            population.members,
+            self.config.elite_count,
+            efficiency_penalty=self.config.efficiency_penalty,
+        )
         forest = lineage_forest(self.agent.runner.registry)
         tree = format_lineage(forest)
         (self.trace_dir / "tree.txt").write_text(tree, encoding="utf-8")
@@ -703,14 +741,27 @@ def _mutation_parent(
 
 
 def _classify_validity(
-    status: str, source: str, parent_sources: list[str], *, executed: bool
+    status: str,
+    source: str,
+    parent_sources: list[str],
+    *,
+    executed: bool,
+    child_parameters: dict[str, Any] | None = None,
+    child_seed: int | None = None,
+    parent_parameters: dict[str, Any] | None = None,
+    parent_seed: int | None = None,
 ) -> str:
     if not executed:
         return "not_executed"
     if status != "success":
         return "implementation_failure"
     stripped = source.strip()
-    if any(stripped == parent.strip() for parent in parent_sources if parent):
+    same_source = any(stripped == parent.strip() for parent in parent_sources if parent)
+    if not same_source:
+        return "hypothesis_tested"
+    same_params = (child_parameters or {}) == (parent_parameters or {})
+    same_seed = child_seed == parent_seed
+    if same_params and same_seed:
         return "semantic_noop"
     return "hypothesis_tested"
 

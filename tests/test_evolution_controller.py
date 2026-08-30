@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from evolution_helpers import evolution_proposal
-from research_agent.agent import ResearchAgent
-from research_agent.evolution import EvolutionConfig, EvolutionController
+import pytest
+from evolution_helpers import evolution_proposal, make_member
+from research_agent.agent import ResearchAgent, UnusableRootError
+from research_agent.evolution import EvolutionConfig, EvolutionController, Population
 from research_agent.evolution.lineage import format_lineage, lineage_forest
 from research_agent.llm import FakeProvider
 from research_helpers import make_runner, mini_root_spec
@@ -134,6 +135,28 @@ def test_incompatible_crossover_falls_back_to_mutation(tmp_path: Path):
     )
 
 
+def test_failed_crossover_proposal_falls_back_to_mutation(tmp_path: Path):
+    script = [
+        evolution_proposal(label="loss", family="ranking_loss"),
+        {"reflection": "not a full proposal"},
+        evolution_proposal(label="fallback", family="optimization", tags=("lr",), axes=("optimization",)),
+    ]
+    ctl = _controller(
+        tmp_path,
+        script=script,
+        population_size=3,
+        elite_count=2,
+        generations=2,
+        max_new_evaluations=2,
+        prefer_crossover_from_generation=2,
+        max_repairs=0,
+    )
+    run = ctl.run()
+    assert [m.origin for m in run.all_members if m.generation == 2] == ["mutation"]
+    assert any(rec.get("reason") == "crossover_proposal_failed" for rec in run.operator_decisions)
+    assert any(rec.get("fallback") == "mutation" for rec in run.operator_decisions)
+
+
 def test_exact_duplicate_is_suppressed(tmp_path: Path):
     first = evolution_proposal(
         label="same",
@@ -214,6 +237,77 @@ def test_failed_implementation_is_not_negative_science(tmp_path: Path):
     assert failed.scientific_evidence is False
     assert failed.research_validity == "implementation_failure"
     assert "BPR pairwise ranking" not in " ".join(run.negative_scientific_hypotheses)
+
+
+def test_failed_fm_root_stops_evolution(tmp_path: Path):
+    from research_agent.experiments import ExperimentSpec
+
+    fail_spec = mini_root_spec(tmp_path)
+    payload = fail_spec.to_dict()
+    payload["parameters"] = {"action": "fail"}
+    payload.pop("spec_hash", None)
+    ctl = _controller(tmp_path, script=[], generations=0, max_new_evaluations=0)
+    ctl.agent.root_spec = ExperimentSpec.from_dict(payload)
+    with pytest.raises(UnusableRootError):
+        ctl.run()
+    assert ctl.agent.provider.calls == []
+
+
+def test_parameter_only_mutation_is_not_semantic_noop(tmp_path: Path):
+    from experiment_helpers import CANDIDATE_SOURCE
+    from research_helpers import make_proposal_payload
+
+    param_only = make_proposal_payload(
+        hypothesis="Same candidate source, different embedding size.",
+        candidate_source=CANDIDATE_SOURCE,
+        experiment_parameters={"action": "succeed", "k": 32},
+        research_family="factorization_machine",
+        mechanism_tags=["fm"],
+        changed_axes=["capacity"],
+        what_changed="k=32 instead of the parent default.",
+    )
+    ctl = _controller(
+        tmp_path,
+        script=[param_only],
+        population_size=2,
+        elite_count=1,
+        generations=1,
+        max_new_evaluations=1,
+    )
+    ctl.agent.workspace.load_parent_source = lambda spec, repo: CANDIDATE_SOURCE  # type: ignore[method-assign]
+    run = ctl.run()
+    child = next(m for m in run.all_members if m.origin == "mutation")
+    assert child.research_validity == "hypothesis_tested"
+    assert child.scientific_evidence is True
+
+
+def test_marked_elites_are_fitness_ranked(tmp_path: Path):
+    ctl = _controller(tmp_path, script=[], generations=0, max_new_evaluations=0)
+    members = [
+        make_member(
+            experiment_id="weak",
+            metrics={"GAUC": 0.50, "nDCG@5": 0.50, "primary": 0.50},
+            runtime_seconds=1.0,
+            research_validity="hypothesis_tested",
+        ),
+        make_member(
+            experiment_id="strong",
+            metrics={"GAUC": 0.70, "nDCG@5": 0.70, "primary": 0.70},
+            runtime_seconds=8.0,
+            research_validity="hypothesis_tested",
+        ),
+        make_member(
+            experiment_id="mid",
+            metrics={"GAUC": 0.60, "nDCG@5": 0.60, "primary": 0.60},
+            runtime_seconds=2.0,
+            research_validity="hypothesis_tested",
+        ),
+    ]
+    marked = ctl._mark_elites(members)
+    elites = [m for m in marked if m.selection == "elite"]
+    assert [m.experiment_id for m in elites] == ["strong", "mid"]
+    finished = ctl._finish(Population(members=marked))
+    assert [m.experiment_id for m in finished.elites] == ["strong", "mid"]
 
 
 def test_semantic_noop_does_not_become_elite(tmp_path: Path):

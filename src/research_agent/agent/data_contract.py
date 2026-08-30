@@ -209,7 +209,7 @@ def claimed_unavailable_fields(
             hits.append(original)
     if not hits:
         return ()
-    if _reads_raw_dataset_files(source):
+    if _reads_claimed_fields_from_raw_csv(source, tuple(hits)):
         return ()
     return tuple(hits)
 
@@ -381,6 +381,13 @@ def _mentions_field(text: str, name: str) -> bool:
     return re.search(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", text) is not None
 
 
-def _reads_raw_dataset_files(source: str) -> bool:
+def _reads_claimed_fields_from_raw_csv(source: str, fields: tuple[str, ...]) -> bool:
+    """Filename mentions alone are not enough; data.load() also names those CSVs."""
+    if not fields:
+        return False
+    if "DictReader" not in source and "csv.reader" not in source:
+        return False
     lowered = source.replace("\\", "/")
-    return any(marker in lowered for marker in _RAW_LOG_MARKERS)
+    if not any(marker in lowered for marker in _RAW_LOG_MARKERS):
+        return False
+    return all(_mentions_field(source, name) for name in fields)

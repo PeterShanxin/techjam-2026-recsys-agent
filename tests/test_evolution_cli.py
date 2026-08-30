@@ -60,3 +60,58 @@ def test_evolution_cli_fake_provider_skips_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ExperimentRunner", lambda **_kwargs: object())
     rc = cli.main(["--provider", "fake", "--generations", "0"])
     assert rc == 0
+
+
+def test_sequential_control_uses_independent_runs_dir(tmp_path, monkeypatch):
+    cli = _load_cli()
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    seen_dirs = []
+
+    class DummyElite:
+        experiment_id = "child-1"
+        fitness = 0.61
+        metrics = {"primary": 0.61}
+
+        def to_dict(self):
+            return {"experiment_id": self.experiment_id, "fitness": self.fitness}
+
+    class DummyRun:
+        stop_reason = "generation_limit"
+        evaluated_offspring = 3
+        elites = [DummyElite()]
+        population = type("P", (), {"members": [type("M", (), {"status": "success"})()]})()
+        trace_dir = tmp_path
+        summary = {"lineage": "", "resources": {}}
+        all_members = [type("M", (), {"research_family": "ranking_loss"})()]
+
+    class DummyController:
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self):
+            return DummyRun()
+
+    class DummyAgent:
+        session_id = "ev-fake"
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self):
+            return type("SR", (), {"summary": {"session_id": "seq-control"}})()
+
+    def capture_runner(**kwargs):
+        seen_dirs.append(kwargs.get("runs_dir"))
+        return object()
+
+    monkeypatch.setattr(cli, "ResearchAgent", DummyAgent)
+    monkeypatch.setattr(cli, "EvolutionController", DummyController)
+    monkeypatch.setattr(cli, "ExperimentRunner", capture_runner)
+    rc = cli.main(["--provider", "fake", "--generations", "0", "--sequential-control"])
+    assert rc == 0
+    assert len(seen_dirs) == 2
+    assert seen_dirs[0] == tmp_path / "runs"
+    assert seen_dirs[1] == tmp_path / "runs" / "sequential-control"
+    assert seen_dirs[1] != seen_dirs[0]
+    assert (tmp_path / "sequential_control.json").is_file()

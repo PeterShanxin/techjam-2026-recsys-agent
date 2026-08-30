@@ -25,9 +25,9 @@ from research_agent.llm.types import (
 from .config import EvolutionConfig
 from .diversity import duplicate_reason, member_signature
 from .fitness import compute_fitness, rank_members, select_elites
-from .lineage import format_lineage, lineage_forest
+from .lineage import format_lineage, session_lineage_forest
 from .prompts import crossover_prompt, mutation_prompt
-from .seeds import ensemble_seed_spec
+from .seeds import ensure_prior_spec, ensemble_seed_spec
 from .types import (
     EvolutionRun,
     GenerationRecord,
@@ -464,28 +464,21 @@ class EvolutionController:
     def _ensure_ensemble_seed(self, root: PopulationMember) -> PopulationMember | None:
         spec = ensemble_seed_spec(parent_id=root.experiment_id)
         existing = self.agent.runner.registry.peek(spec.experiment_id)
-        if existing is not None and existing.result is not None:
-            return self._member_from_result(
-                existing.spec,
-                existing.result,
-                generation=0,
-                origin="mutation",
-                proposal=None,
-                source_fingerprint=sha256_text(self._source_for(existing.spec.experiment_id)),
-                research_validity="hypothesis_tested" if existing.result.status == "success" else "implementation_failure",
-                scientific_evidence=existing.result.status == "success",
+        reused = existing is not None and existing.result is not None
+        entry = ensure_prior_spec(self.agent.runner, spec)
+        if not reused:
+            self.agent.ledger.add_experiment(
+                status=entry.result.status, wall_seconds=entry.result.wall_seconds
             )
-        result = self.agent.runner.run(spec)
-        self.agent.ledger.add_experiment(status=result.status, wall_seconds=result.wall_seconds)
         member = self._member_from_result(
-            spec,
-            result,
+            entry.spec,
+            entry.result,
             generation=0,
             origin="mutation",
             proposal=None,
-            source_fingerprint=sha256_text(self._source_for(spec.experiment_id)),
-            research_validity="hypothesis_tested" if result.status == "success" else "implementation_failure",
-            scientific_evidence=result.status == "success",
+            source_fingerprint=sha256_text(self._source_for(entry.spec.experiment_id)),
+            research_validity="hypothesis_tested" if entry.result.status == "success" else "implementation_failure",
+            scientific_evidence=entry.result.status == "success",
         )
         member = member.with_updates(
             fitness=compute_fitness(member, efficiency_penalty=self.config.efficiency_penalty),
@@ -682,7 +675,11 @@ class EvolutionController:
             self.config.elite_count,
             efficiency_penalty=self.config.efficiency_penalty,
         )
-        forest = lineage_forest(self.agent.runner.registry)
+        forest = session_lineage_forest(
+            self.agent.runner.registry,
+            self.session_id,
+            extra_ids={item.experiment_id for item in self.all_members},
+        )
         tree = format_lineage(forest)
         (self.trace_dir / "tree.txt").write_text(tree, encoding="utf-8")
         summary = sanitize(

@@ -14,6 +14,7 @@ if str(ROOT / "src") not in sys.path:
 from research_agent.agent import ResearchAgent, UnusableRootError
 from research_agent.agent.constants import DEFAULT_RESEARCH_MODEL, DEFAULT_THINKING_LEVEL
 from research_agent.evolution import EvolutionConfig, EvolutionController
+from research_agent.evolution.seeds import ensure_matched_starting_seeds
 from research_agent.experiments import ExperimentRunner
 from research_agent.llm import (
     FakeProvider,
@@ -157,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         control_n = max(1, run.evaluated_offspring)
         print("")
         print(f"=== sequential control ({control_n} iterations, independent registry) ===")
+        print("priors      fm-root + fm-ensemble-3seed (not counted as new evaluations)")
         control_dir = runs_dir / "sequential-control"
         control_runner = ExperimentRunner(
             repo_root=ROOT,
@@ -177,11 +179,14 @@ def main(argv: list[str] | None = None) -> int:
             experiment_timeout_seconds=args.timeout,
         )
         try:
+            ensure_matched_starting_seeds(seq)
             seq_run = seq.run()
         except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError, UnusableRootError) as exc:
             print(redact_text(str(exc)), file=sys.stderr)
             return 2
         compare = {
+            "starting_seeds": ["fm-root", "fm-ensemble-3seed"],
+            "new_evaluations": control_n,
             "evolution": {
                 "best": None if not run.elites else run.elites[0].to_dict(),
                 "evaluated": run.evaluated_offspring,

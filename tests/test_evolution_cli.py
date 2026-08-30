@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,9 +95,10 @@ def test_sequential_control_uses_independent_runs_dir(tmp_path, monkeypatch):
 
     class DummyAgent:
         session_id = "ev-fake"
+        max_iterations = None
 
-        def __init__(self, **_kwargs):
-            pass
+        def __init__(self, **kwargs):
+            DummyAgent.max_iterations = kwargs.get("max_iterations")
 
         def run(self):
             return type("SR", (), {"summary": {"session_id": "seq-control"}})()
@@ -108,10 +110,21 @@ def test_sequential_control_uses_independent_runs_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ResearchAgent", DummyAgent)
     monkeypatch.setattr(cli, "EvolutionController", DummyController)
     monkeypatch.setattr(cli, "ExperimentRunner", capture_runner)
+    priors = []
+
+    def fake_priors(agent, **_kwargs):
+        priors.append(agent.max_iterations if hasattr(agent, "max_iterations") else 3)
+        return object(), object()
+
+    monkeypatch.setattr(cli, "ensure_matched_starting_seeds", fake_priors)
     rc = cli.main(["--provider", "fake", "--generations", "0", "--sequential-control"])
     assert rc == 0
+    assert priors == [3]
     assert len(seen_dirs) == 2
     assert seen_dirs[0] == tmp_path / "runs"
     assert seen_dirs[1] == tmp_path / "runs" / "sequential-control"
     assert seen_dirs[1] != seen_dirs[0]
     assert (tmp_path / "sequential_control.json").is_file()
+    payload = json.loads((tmp_path / "sequential_control.json").read_text(encoding="utf-8"))
+    assert payload["starting_seeds"] == ["fm-root", "fm-ensemble-3seed"]
+    assert payload["new_evaluations"] == 3

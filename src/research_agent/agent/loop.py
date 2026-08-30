@@ -121,34 +121,41 @@ class ResearchAgent:
 
     def run(self) -> ResearchRun:
         started = time.perf_counter()
-        root = self.ensure_root()
-        if not is_usable_root_result(root.result):
-            self.ledger.research_wall_seconds = time.perf_counter() - started
-            summary = self._summary(root, [])
-            self.trace.write_exports(summary=summary)
-            raise UnusableRootError(
-                f"research root {root.experiment_id} is not a successful validation result"
-            )
+        root: IterationOutcome | None = None
         outcomes: list[IterationOutcome] = []
-        for iteration in range(1, self.max_iterations + 1):
-            remaining_wall = self._remaining_wall(started)
-            if remaining_wall is not None and remaining_wall <= 0:
-                self.emit({"type": "budget", "reason": "wall_clock", "iteration": iteration})
-                break
-            outcome = self._run_iteration(iteration, started)
-            outcomes.append(outcome)
-        self.ledger.research_wall_seconds = time.perf_counter() - started
-        summary = self._summary(root, outcomes)
-        self.trace.write_exports(summary=summary)
-        self.emit({"type": "done", "summary": summary})
-        return ResearchRun(
-            root=root,
-            iterations=outcomes,
-            ledger=self.ledger,
-            trace_dir=self.trace.path.parent,
-            summary=summary,
-            session_id=self.session_id,
-        )
+        try:
+            root = self.ensure_root()
+            if not is_usable_root_result(root.result):
+                self.ledger.research_wall_seconds = time.perf_counter() - started
+                summary = self._summary(root, [])
+                self.trace.write_exports(summary=summary)
+                raise UnusableRootError(
+                    f"research root {root.experiment_id} is not a successful validation result"
+                )
+            for iteration in range(1, self.max_iterations + 1):
+                remaining_wall = self._remaining_wall(started)
+                if remaining_wall is not None and remaining_wall <= 0:
+                    self.emit({"type": "budget", "reason": "wall_clock", "iteration": iteration})
+                    break
+                outcome = self._run_iteration(iteration, started)
+                outcomes.append(outcome)
+            self.ledger.research_wall_seconds = time.perf_counter() - started
+            summary = self._summary(root, outcomes)
+            self.trace.write_exports(summary=summary)
+            self.emit({"type": "done", "summary": summary})
+            return ResearchRun(
+                root=root,
+                iterations=outcomes,
+                ledger=self.ledger,
+                trace_dir=self.trace.path.parent,
+                summary=summary,
+                session_id=self.session_id,
+            )
+        except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError):
+            self.ledger.research_wall_seconds = time.perf_counter() - started
+            summary = self._summary(root, outcomes)
+            self.trace.write_exports(summary=summary)
+            raise
 
     def ensure_root(self) -> IterationOutcome:
         usable = find_usable_root(self.runner.registry, self.root_spec.experiment_id)
@@ -210,8 +217,6 @@ class ResearchAgent:
         )
         dest = self.workspace.dest_for(experiment_id)
         proposal, usages, error = self._propose(state, dest)
-        for usage in usages:
-            self.ledger.add_usage(usage)
         repair_calls = sum(1 for item in usages if item.purpose == "repair")
         if proposal is None:
             outcome = IterationOutcome(
@@ -297,49 +302,63 @@ class ResearchAgent:
         dest: Path,
     ) -> tuple[ResearchProposal | None, list[UsageRecord], str | None]:
         usages: list[UsageRecord] = []
-        request = LLMRequest(
-            prompt=research_prompt(state),
-            response_schema=proposal_schema(),
-            model=self.model,
-            thinking_level=self.thinking_level,
-            purpose="research",
-        )
-        response = self._generate(request, usages)
-        last_error = None if response is not None else (usages[-1].error if usages else "provider error")
-        previous_text = "" if response is None else response.text
-        for repair in range(0, self.max_repairs + 1):
-            if response is not None:
-                proposal, last_error = _try_parse_proposal(response, dest, self.workspace.root)
-                if proposal is not None:
-                    return proposal, usages, None
-            elif last_error is None:
-                last_error = usages[-1].error if usages else "provider error"
-            if repair >= self.max_repairs:
-                break
-            thinking = REPAIR_THINKING_LEVEL if self.escalate_repairs else self.thinking_level
-            repair_request = LLMRequest(
-                prompt=repair_prompt(state, last_error or "invalid proposal", previous_text),
+        try:
+            request = LLMRequest(
+                prompt=research_prompt(state),
                 response_schema=proposal_schema(),
                 model=self.model,
-                thinking_level=thinking,
-                purpose="repair",
+                thinking_level=self.thinking_level,
+                purpose="research",
             )
-            self.emit(
-                {
-                    "type": "repair",
-                    "attempt": repair + 1,
-                    "thinking_level": thinking,
-                    "error": last_error,
-                }
-            )
-            response = self._generate(repair_request, usages)
+            response = self._generate(request, usages)
+            last_error = None if response is not None else (usages[-1].error if usages else "provider error")
             previous_text = "" if response is None else response.text
-        return None, usages, last_error
+            for repair in range(0, self.max_repairs + 1):
+                if response is not None:
+                    proposal, last_error = _try_parse_proposal(response, dest, self.workspace.root)
+                    if proposal is not None:
+                        return proposal, usages, None
+                elif last_error is None:
+                    last_error = usages[-1].error if usages else "provider error"
+                if repair >= self.max_repairs:
+                    break
+                thinking = REPAIR_THINKING_LEVEL if self.escalate_repairs else self.thinking_level
+                repair_request = LLMRequest(
+                    prompt=repair_prompt(state, last_error or "invalid proposal", previous_text),
+                    response_schema=proposal_schema(),
+                    model=self.model,
+                    thinking_level=thinking,
+                    purpose="repair",
+                )
+                self.emit(
+                    {
+                        "type": "repair",
+                        "attempt": repair + 1,
+                        "thinking_level": thinking,
+                        "error": last_error,
+                    }
+                )
+                response = self._generate(repair_request, usages)
+                previous_text = "" if response is None else response.text
+            return None, usages, last_error
+        finally:
+            for usage in usages:
+                self.ledger.add_usage(usage)
 
     def _generate(self, request: LLMRequest, usages: list[UsageRecord]) -> LLMResponse | None:
         try:
             response = self.provider.generate(request)
-        except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError):
+        except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError) as exc:
+            usage = UsageRecord(
+                provider=getattr(self.provider, "name", "unknown"),
+                model=request.model,
+                thinking_level=request.thinking_level,
+                purpose=request.purpose,
+                status=_fatal_usage_status(exc),
+                latency_seconds=0.0,
+                error=redact_text(str(exc)),
+            )
+            usages.append(usage)
             raise
         except Exception as exc:
             usage = UsageRecord(
@@ -558,6 +577,20 @@ def _parent_metrics(registry: Any, experiment_id: str | None) -> dict[str, float
         return None
     m = entry.result.metrics
     return {"GAUC": m.gauc, "nDCG@5": m.ndcg_at_5, "primary": m.primary}
+
+
+def _fatal_usage_status(exc: Exception) -> str:
+    if isinstance(exc, LLMConfigError):
+        return "config_error"
+    if isinstance(exc, LLMAuthError):
+        return "auth_error"
+    if isinstance(exc, LLMRateLimitError):
+        return "rate_limited"
+    if isinstance(exc, LLMTransientError):
+        return "transient"
+    if isinstance(exc, LLMProtocolError):
+        return "protocol_error"
+    return "error"
 
 
 def _result_error(result: Any) -> str | None:

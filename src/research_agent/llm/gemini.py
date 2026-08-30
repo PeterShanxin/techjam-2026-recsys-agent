@@ -111,9 +111,12 @@ class GeminiProvider:
                 status, body = self._transport(
                     INTERACTIONS_URL, payload, headers, self.timeout_seconds
                 )
-            except LLMTransientError:
+            except (LLMTransientError, TimeoutError) as exc:
                 retries += 1
                 if attempt + 1 >= MAX_TRANSPORT_RETRIES:
+                    self.transport_retries += retries
+                    if isinstance(exc, TimeoutError):
+                        raise LLMTransientError(redact_text(str(exc))) from exc
                     raise
                 time.sleep(_backoff(attempt))
                 continue
@@ -209,6 +212,8 @@ def default_transport(
         return status, parsed if isinstance(parsed, dict) else {"error": "non-object error body"}
     except urllib.error.URLError as exc:
         raise LLMTransientError(redact_text(str(exc.reason if getattr(exc, "reason", None) else exc))) from exc
+    except TimeoutError as exc:
+        raise LLMTransientError(redact_text(str(exc))) from exc
     try:
         parsed = json.loads(raw) if raw else {}
     except json.JSONDecodeError as exc:

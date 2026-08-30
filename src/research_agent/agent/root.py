@@ -34,14 +34,24 @@ def is_usable_root_result(result: Any) -> bool:
     return True
 
 
+def is_root_identity(experiment_id: str, base_id: str = FM_ROOT_ID) -> bool:
+    if experiment_id == base_id:
+        return True
+    prefix = f"{base_id}-r"
+    if not experiment_id.startswith(prefix):
+        return False
+    suffix = experiment_id[len(prefix) :]
+    return suffix.isdigit() and len(suffix) >= 1
+
+
 def find_usable_root(registry: Any, preferred_id: str = FM_ROOT_ID) -> Any | None:
     preferred = registry.peek(preferred_id)
     if preferred is not None and is_usable_root_result(preferred.result):
         return preferred
     for experiment_id in registry.iter_ids():
-        entry = registry.get(experiment_id)
-        if entry.spec.origin != "baseline":
+        if not is_root_identity(experiment_id, preferred_id):
             continue
+        entry = registry.get(experiment_id)
         if is_usable_root_result(entry.result):
             return entry
     return None

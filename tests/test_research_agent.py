@@ -8,7 +8,7 @@ import pytest
 from research_agent.agent import ResearchAgent, UnusableRootError
 from research_agent.agent.constants import FM_ROOT_ID
 from research_agent.agent.fm_root import fm_root_spec
-from research_agent.llm import FakeProvider, LLMConfigError
+from research_agent.llm import FakeProvider, LLMConfigError, LLMRateLimitError, LLMTransientError
 from research_helpers import make_proposal_payload, make_runner, mini_root_spec
 
 
@@ -242,6 +242,60 @@ def test_failed_fm_root_is_not_reused(tmp_path: Path):
     assert runner.registry.get("fm-root").result.status == "failed"
 
 
+def test_non_fm_baseline_is_not_research_root(tmp_path: Path):
+    runner, _data = make_runner(tmp_path)
+    other = mini_root_spec(tmp_path, experiment_id="random-valid-seed0")
+    other_result = runner.run(other)
+    assert other_result.status == "success"
+    agent = _agent(
+        tmp_path,
+        [make_proposal_payload()],
+        runner=runner,
+        max_iterations=1,
+        session_id="rs-from-fm",
+    )
+    run = agent.run()
+    assert run.root.experiment_id == "fm-root"
+    assert run.iterations[0].parent_id == "fm-root"
+    assert runner.registry.get("random-valid-seed0").result.status == "success"
+
+
+def test_fatal_llm_error_persists_prior_usage(tmp_path: Path):
+    class OnceThenRateLimit:
+        name = "boom"
+
+        def __init__(self):
+            self.n = 0
+            self._inner = FakeProvider(script=[make_proposal_payload()])
+
+        def generate(self, request):
+            self.n += 1
+            if self.n == 1:
+                return self._inner.generate(request)
+            raise LLMRateLimitError("Gemini rate limited")
+
+    runner, _data = make_runner(tmp_path)
+    agent = ResearchAgent(
+        provider=OnceThenRateLimit(),
+        runner=runner,
+        model="fake-model",
+        thinking_level="medium",
+        max_iterations=2,
+        max_repairs=0,
+        root_spec=mini_root_spec(tmp_path),
+        experiment_timeout_seconds=30.0,
+        session_id="rs-usage",
+    )
+    with pytest.raises(LLMRateLimitError):
+        agent.run()
+    assert agent.ledger.research_calls == 2
+    assert agent.ledger.llm_calls == 2
+    assert agent.trace.summary_path.is_file()
+    summary = agent.trace.summary_path.read_text(encoding="utf-8")
+    assert "rs-usage" in summary
+    assert agent.ledger.input_tokens > 0
+
+
 def test_env_file_is_gitignored():
     import subprocess
 
@@ -286,8 +340,9 @@ def test_config_error_is_not_repaired(tmp_path: Path):
     )
     with pytest.raises(LLMConfigError, match="GEMINI_API_KEY"):
         agent.run()
-    assert agent.ledger.repair_calls == 0
-    assert agent.ledger.research_calls == 0
+        assert agent.ledger.repair_calls == 0
+        assert agent.ledger.research_calls == 1
+        assert agent.ledger.llm_calls == 1
 
 
 def test_research_trace_redacts_key_value(tmp_path: Path, monkeypatch):

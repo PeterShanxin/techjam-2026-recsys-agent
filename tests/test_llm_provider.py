@@ -248,6 +248,18 @@ def test_transient_server_error(monkeypatch):
         provider.generate(_request())
 
 
+def test_read_timeout_is_retried_as_transient(monkeypatch):
+    monkeypatch.setattr("research_agent.llm.gemini.time.sleep", lambda _s: None)
+
+    def boom(url, payload, headers, timeout):
+        raise TimeoutError("timed out")
+
+    provider = GeminiProvider(transport=boom, api_key="test-key")
+    with pytest.raises(LLMTransientError, match="timed out"):
+        provider.generate(_request())
+    assert provider.transport_retries == 3
+
+
 def test_malformed_json_http_raises_protocol():
     def bad_transport(url, payload, headers, timeout):
         raise LLMProtocolError("Gemini HTTP response was not JSON")

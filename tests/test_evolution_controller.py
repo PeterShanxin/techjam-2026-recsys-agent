@@ -281,6 +281,30 @@ def test_parameter_only_mutation_is_not_semantic_noop(tmp_path: Path):
     assert child.scientific_evidence is True
 
 
+def test_parameter_only_mutation_of_non_root_is_not_suppressed(tmp_path: Path):
+    first = evolution_proposal(label="loss", family="ranking_loss")
+    param_only = dict(first)
+    param_only["hypothesis"] = "Same ranking-loss source, different learning rate."
+    param_only["experiment_parameters"] = {**dict(first["experiment_parameters"]), "lr": 0.01}
+    param_only["what_changed"] = "lr=0.01 on the same candidate source."
+    param_only["changed_axes"] = ["optimization"]
+    ctl = _controller(
+        tmp_path,
+        script=[first, param_only],
+        population_size=3,
+        elite_count=1,
+        generations=0,
+        max_new_evaluations=3,
+        fill_to_size_on_init=True,
+    )
+    run = ctl.run()
+    children = [m for m in run.all_members if m.origin == "mutation"]
+    assert len(children) == 2
+    assert all(m.research_validity == "hypothesis_tested" for m in children)
+    fps = {m.source_fingerprint for m in children}
+    assert len(fps) == 1
+
+
 def test_marked_elites_are_fitness_ranked(tmp_path: Path):
     ctl = _controller(tmp_path, script=[], generations=0, max_new_evaluations=0)
     members = [

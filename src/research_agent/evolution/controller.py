@@ -347,16 +347,21 @@ class EvolutionController:
             scientific_evidence=False,
         )
         reason = duplicate_reason(probe, self.all_members)
-        matching_exact = [
+        matching_source = [
             item
             for item in self.all_members
-            if (probe.spec_hash and item.spec_hash == probe.spec_hash)
-            or (probe.source_fingerprint and item.source_fingerprint == probe.source_fingerprint)
+            if probe.source_fingerprint and item.source_fingerprint == probe.source_fingerprint
         ]
-        only_baseline_parent_copy = bool(matching_exact) and all(
-            item.origin == "baseline" or item.research_validity == "root" for item in matching_exact
+        only_baseline_parent_copy = bool(matching_source) and all(
+            item.origin == "baseline" or item.research_validity == "root" for item in matching_source
         )
-        if reason == "semantic_signature" or (reason is not None and not only_baseline_parent_copy):
+        same_params_as_source_twin = self._same_params_and_seed(proposal, matching_source)
+        suppress_duplicate = False
+        if reason == "semantic_signature" or reason == "spec_hash":
+            suppress_duplicate = True
+        elif reason == "source_fingerprint" and same_params_as_source_twin and not only_baseline_parent_copy:
+            suppress_duplicate = True
+        if suppress_duplicate:
             self._last_spawn_kind = "duplicate"
             self.diversity_events.append(
                 {
@@ -367,14 +372,14 @@ class EvolutionController:
                 }
             )
             return None
-        if only_baseline_parent_copy:
+        if reason == "source_fingerprint":
             self.diversity_events.append(
                 {
                     "reason": "source_fingerprint",
                     "hypothesis": proposal.hypothesis,
                     "research_family": probe.research_family,
                     "generation": generation,
-                    "detail": "parent_copy",
+                    "detail": "parent_copy" if same_params_as_source_twin else "parameter_only",
                 }
             )
         self._last_spawn_kind = "ok"
@@ -648,6 +653,17 @@ class EvolutionController:
     def _source_for(self, experiment_id: str) -> str:
         spec = self.agent.runner.registry.get(experiment_id).spec
         return self.agent.workspace.load_parent_source(spec, self.agent.runner.repo_root)
+
+    def _same_params_and_seed(self, proposal: Any, members: list[PopulationMember]) -> bool:
+        child_params = dict(getattr(proposal, "experiment_parameters", {}) or {})
+        child_seed = getattr(proposal, "seed", None)
+        for item in members:
+            entry = self.agent.runner.registry.peek(item.experiment_id)
+            if entry is None:
+                continue
+            if dict(entry.spec.parameters) == child_params and entry.spec.seed == child_seed:
+                return True
+        return False
 
     def _current_population_members(self) -> list[PopulationMember]:
         if not self.generation_records:

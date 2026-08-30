@@ -490,6 +490,31 @@ def test_fitness_never_reads_test_split_rows(tmp_path: Path):
             assert member.evaluation_split == "valid"
 
 
+def test_crossover_copy_of_second_parent_is_noop():
+    from research_agent.evolution.controller import _classify_validity
+
+    copied_second = _classify_validity(
+        "success",
+        "source-b",
+        ["source-a", "source-b"],
+        executed=True,
+        child_parameters={"k": 8},
+        child_seed=0,
+        parent_records=[("source-a", {"k": 16}, 0), ("source-b", {"k": 8}, 0)],
+    )
+    mutated_first = _classify_validity(
+        "success",
+        "source-a",
+        ["source-a", "source-b"],
+        executed=True,
+        child_parameters={"k": 32},
+        child_seed=0,
+        parent_records=[("source-a", {"k": 16}, 0), ("source-b", {"k": 8}, 0)],
+    )
+    assert copied_second == "semantic_noop"
+    assert mutated_first == "hypothesis_tested"
+
+
 def test_evaluator_hash_unchanged():
     from conftest import evaluate_py_canonical_bytes
     import hashlib

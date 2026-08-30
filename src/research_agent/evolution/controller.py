@@ -410,18 +410,20 @@ class EvolutionController:
         result = self.agent.runner.run(spec)
         self.agent.ledger.add_experiment(status=result.status, wall_seconds=result.wall_seconds)
         self._evaluated += 1
-        parent_source_all = parent_sources
-        parent_entry = self.agent.runner.registry.peek(parent_ids[0]) if parent_ids else None
-        parent_spec = None if parent_entry is None else parent_entry.spec
+        parent_records: list[tuple[str, dict[str, Any], int | None]] = []
+        for pid, src in zip(parent_ids, parent_sources):
+            entry = self.agent.runner.registry.peek(pid)
+            params = dict(entry.spec.parameters) if entry is not None else {}
+            seed = None if entry is None else entry.spec.seed
+            parent_records.append((src, params, seed))
         validity = _classify_validity(
             result.status,
             proposal.candidate_source,
-            parent_source_all,
+            parent_sources,
             executed=True,
             child_parameters=dict(proposal.experiment_parameters),
             child_seed=proposal.seed,
-            parent_parameters=dict(parent_spec.parameters) if parent_spec is not None else {},
-            parent_seed=None if parent_spec is None else parent_spec.seed,
+            parent_records=parent_records,
         )
         if validity == "semantic_noop":
             self.agent.runner.registry.mark_decision(experiment_id, "rejected")
@@ -766,19 +768,23 @@ def _classify_validity(
     child_seed: int | None = None,
     parent_parameters: dict[str, Any] | None = None,
     parent_seed: int | None = None,
+    parent_records: list[tuple[str, dict[str, Any], int | None]] | None = None,
 ) -> str:
     if not executed:
         return "not_executed"
     if status != "success":
         return "implementation_failure"
     stripped = source.strip()
-    same_source = any(stripped == parent.strip() for parent in parent_sources if parent)
-    if not same_source:
-        return "hypothesis_tested"
-    same_params = (child_parameters or {}) == (parent_parameters or {})
-    same_seed = child_seed == parent_seed
-    if same_params and same_seed:
-        return "semantic_noop"
+    records = list(parent_records or [])
+    if not records:
+        records = [
+            (src, dict(parent_parameters or {}), parent_seed) for src in parent_sources if src
+        ]
+    for src, params, seed in records:
+        if not src or stripped != src.strip():
+            continue
+        if (child_parameters or {}) == (params or {}) and child_seed == seed:
+            return "semantic_noop"
     return "hypothesis_tested"
 
 

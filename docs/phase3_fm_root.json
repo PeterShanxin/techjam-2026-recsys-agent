@@ -15,12 +15,21 @@
   "wall_seconds": 83.638,
   "match_phase1_valid_fm": true,
   "gemini_live": {
-    "smoke": "blocked",
-    "autonomous_iterations": "blocked",
+    "intended_model": "gemini-3.7-flash",
+    "live_validation_model": "gemini-3.6-flash",
     "transport": "REST POST /v1beta/interactions",
-    "model": "gemini-3.7-flash",
     "thinking": "medium",
     "auth": "ok",
-    "reason": "gemini-3.7-flash returned HTTP 500 high-demand after credentials and model listing succeeded; research loop not started"
+    "gemini_3_7_flash": {
+      "smoke": "blocked",
+      "autonomous_iterations": "blocked",
+      "reason": "Developer API returned HTTP 500 (Interactions) and HTTP 503 (generateContent) high-demand after model listing succeeded; AI Studio chat for 3.7 still completed"
+    },
+    "gemini_3_6_flash": {
+      "structured_smoke": "success",
+      "autonomous_iterations": 3,
+      "session_id": "rs-20260830T095957Z-c4eebeaf",
+      "record": "docs/phase3_live_validation.json"
+    }
   }
 }

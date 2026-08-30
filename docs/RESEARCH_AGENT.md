@@ -22,7 +22,7 @@ No population. No crossover. No evolutionary selection pressure. That is Phase 4
 
 Production: `GeminiProvider` talks to the official Interactions REST API with `urllib` (`POST /v1beta/interactions`). No `google-genai` SDK.
 
-- model: `gemini-3.7-flash`
+- intended model: `gemini-3.7-flash`
 - thinking: `medium` on research calls (`generation_config.thinking_level`)
 - `high` only on bounded repair
 - credential: `GEMINI_API_KEY` from process env, else repo-root `.env` (`override=False`)
@@ -30,6 +30,8 @@ Production: `GeminiProvider` talks to the official Interactions REST API with `u
 - structured JSON via `response_format` + JSON schema
 - responses parsed from completed `steps` / `model_output` (not legacy `outputs`)
 - usage metadata is first-party; missing fields stay `None` (no token estimates)
+
+There is no automatic model fallback. If `gemini-3.7-flash` is unavailable on the Developer API, pass `--model` explicitly. First live validation used `gemini-3.6-flash` for that reason; see [Live validation](#live-validation).
 
 Tests use `FakeProvider` or a scripted HTTP transport. They must not call Gemini.
 
@@ -68,3 +70,19 @@ Smoke (requires `GEMINI_API_KEY`):
 ```
 
 Traces: `runs/research/<session-id>/trace.jsonl`, `report.md`, `summary.json`.
+
+## Live validation
+
+Intended production model stays `gemini-3.7-flash`. The first closed-loop KuaiRand validation did **not** use it.
+
+On 30 Aug 2026 the same `GEMINI_API_KEY` could list `gemini-3.7-flash` and complete AI Studio chat, but Developer API serving failed:
+
+- Interactions `POST /v1beta/interactions` → HTTP 500 high-demand
+- `generateContent` `POST /v1beta/models/gemini-3.7-flash:generateContent` → HTTP 503 high-demand
+- Control: `generateContent` `gemini-3.6-flash` → HTTP 200
+
+Phase 3 was time-boxed onto `gemini-3.6-flash` (`--model gemini-3.6-flash --thinking medium`). No Vertex path. No automatic fallback code.
+
+Machine-readable record: [`phase3_live_validation.json`](phase3_live_validation.json). Full traces stay under gitignored `runs/research/rs-20260830T095957Z-c4eebeaf/`.
+
+Session `rs-20260830T095957Z-c4eebeaf`: reused usable `fm-root`, 3 research calls, 0 repairs, 0 manual edits. Best remained `fm-root` (primary 0.6015). Iteration 2 failed (`import torch` missing). Iterations 2 and 3 did change direction from prior evidence, imperfectly: iteration 1 silently fell back to official FM when torch was absent, so its “no gain” was not a real BPR test.

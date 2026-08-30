@@ -75,6 +75,7 @@ The dataset is intentionally not committed. See `starter/kuairand/README.md` for
 - [x] Reproduce official FM baseline
 - [x] Define exact experiment schema and registry
 - [x] Implement sequential autonomous research loop
+- [x] Live-validate sequential loop on KuaiRand valid (`gemini-3.6-flash`; intended model remains `gemini-3.7-flash`)
 - [ ] Add evolutionary branching
 - [ ] Add semantic crossover
 - [ ] Run controlled benchmark experiments

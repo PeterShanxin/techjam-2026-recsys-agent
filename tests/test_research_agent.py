@@ -340,9 +340,9 @@ def test_config_error_is_not_repaired(tmp_path: Path):
     )
     with pytest.raises(LLMConfigError, match="GEMINI_API_KEY"):
         agent.run()
-        assert agent.ledger.repair_calls == 0
-        assert agent.ledger.research_calls == 1
-        assert agent.ledger.llm_calls == 1
+    assert agent.ledger.repair_calls == 0
+    assert agent.ledger.research_calls == 1
+    assert agent.ledger.llm_calls == 1
 
 
 def test_research_trace_redacts_key_value(tmp_path: Path, monkeypatch):

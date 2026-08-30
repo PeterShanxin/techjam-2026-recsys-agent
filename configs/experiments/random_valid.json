@@ -1,0 +1,22 @@
+{
+  "schema_version": "1",
+  "experiment_id": "random-valid-seed0",
+  "parent_ids": [],
+  "hypothesis": "Random scores are a lower bound for the official ranking metrics.",
+  "rationale": "Phase 2 plumbing check. Not a modeling claim.",
+  "origin": "baseline",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/random_scorer.py",
+    "source_root": null,
+    "extra_paths": []
+  },
+  "parameters": {
+    "scorer": "random"
+  },
+  "seed": 0,
+  "evaluation_split": "valid",
+  "timeout_seconds": 300,
+  "allow_test_split": false,
+  "tags": ["phase2", "sanity", "random"],
+  "notes": "Official-style random scorer on validation only."
+}

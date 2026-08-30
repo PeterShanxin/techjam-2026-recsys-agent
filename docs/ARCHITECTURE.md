@@ -169,12 +169,33 @@ BPR loss improvement       sequence-model improvement
 7. Track manual interventions explicitly because autonomy is part of the Track 2 evaluation story.
 8. Optimize first for a reliable end-to-end loop and measurable benchmark improvement, then add sophistication.
 
-## Still to freeze in Phase 0
+## Phase 2 interfaces (implemented)
 
-- Exact `ExperimentSpec` schema
-- Exact `ExperimentResult` / registry schema
-- Runner/checkpoint/rollback semantics
-- LLM provider abstraction and accounting interface
-- MVP vs stretch feature boundary
+See [`docs/EXPERIMENT_HARNESS.md`](EXPERIMENT_HARNESS.md) for the full contract.
 
-Once these interfaces are sufficiently concrete, implementation should move immediately to Phase 1 baseline reproduction rather than further architecture polishing.
+### ExperimentSpec
+
+Frozen dataclass in `research_agent.experiments`. Model-agnostic: model/loss/width live in `parameters` or the candidate file. `experiment_id` is run identity. `spec_hash` is the execution fingerprint (schema, implementation, parameters, seed, split). Parents: 0 baseline / 1 mutation / many crossover.
+
+### ExperimentRunner
+
+`ExperimentRunner.run(spec) -> ExperimentResult`. Isolated `runs/<experiment_id>/`, subprocess candidate, timeout, score validation, then organizer `evaluate(user_ids, labels, scores)` only.
+
+### ExperimentResult
+
+Statuses: `success`, `failed`, `timeout`, `invalid`. Success carries official `GAUC` / `nDCG@5` / `primary`. Decisions are not stored on the result.
+
+### ExperimentRegistry
+
+SQLite primitives: persist spec/result, spec-hash lookup, lineage/ancestry, decision (`pending` / `accepted` / `rejected`), validation elite, first-parent rollback target. No fitness policy.
+
+### Split policy
+
+Default and autonomous-search split is `valid`. Test requires `allow_test_split` or `allow_test=True`. Elite ranking never uses test.
+
+### Still later
+
+- LLM provider abstraction and token accounting (Phase 3)
+- ResearchAgent / EvolutionController
+- Real fitness beyond validation elite (Phase 4)
+

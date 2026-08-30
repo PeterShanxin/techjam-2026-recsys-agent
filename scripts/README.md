@@ -14,3 +14,11 @@ Default data path is `starter/kuairand/KuaiRand-Pure/data`. Override with `--dat
 Optional `--json-out path.json` writes metrics and wall time.
 
 See [`docs/BASELINE_REPRODUCTION.md`](../docs/BASELINE_REPRODUCTION.md).
+
+## Experiment harness
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_experiment.py --spec configs\experiments\random_valid.json
+```
+
+`--allow-test` is required for `evaluation_split=test`. Details: [`docs/EXPERIMENT_HARNESS.md`](../docs/EXPERIMENT_HARNESS.md).

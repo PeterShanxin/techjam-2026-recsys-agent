@@ -25,5 +25,5 @@
     "mech:tiered_variance_filtering",
     "mech:capacity_control"
   ],
-  "notes": "Seed 42 is the agent's own choice and is kept deliberately: seeds 7 and 2024 scored higher on validation, and picking them after the fact would be selection across replicates. All tier settings come from the agent, not from a human."
+  "notes": "RESEARCH-PHASE FREEZE of the sprint-2 live elite: this is the spec whose run produced runs/sprint2-tiered-ensemble/scores.npy, the vector used in the paired bootstraps. The Phase 5 SUBMISSION spec for the same mechanism is configs/experiments/final_tiered_valid.json. Seed 42 is the agent's own choice and is kept deliberately: seeds 7 and 2024 scored higher on validation, and picking them after the fact would be selection across replicates. All tier settings come from the agent, not from a human."
 }

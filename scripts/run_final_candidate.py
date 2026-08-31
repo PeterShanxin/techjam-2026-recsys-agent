@@ -2,6 +2,9 @@
 
 Validation is the default. Test requires --allow-test and is for the official
 CSV only — never for selecting experiments.
+
+--legacy-swa7 runs the superseded Phase 4 winner instead, so its historical
+number stays reproducible. It is not the submission candidate.
 """
 from __future__ import annotations
 
@@ -15,7 +18,12 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from research_agent.experiments import ExperimentRunner
-from research_agent.final_candidate import FINAL_EXPERIMENT_ID, final_candidate_spec
+from research_agent.final_candidate import (
+    FINAL_EXPERIMENT_ID,
+    LEGACY_SWA7_EXPERIMENT_ID,
+    final_candidate_spec,
+    swa7_candidate_spec,
+)
 
 
 def _resolve_data_dir(explicit: str | None) -> Path:
@@ -38,15 +46,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--data-dir", default=None)
     ap.add_argument("--runs-dir", default=None)
     ap.add_argument("--experiment-id", default=None)
+    ap.add_argument(
+        "--legacy-swa7",
+        action="store_true",
+        help="Run the superseded Phase 4 SWA+7-seed winner instead of the Phase 5 candidate.",
+    )
     args = ap.parse_args(argv)
 
     if args.split == "test" and not args.allow_test:
         print("test split requires --allow-test after the candidate is frozen", file=sys.stderr)
         return 2
 
-    spec = final_candidate_spec(
+    build = swa7_candidate_spec if args.legacy_swa7 else final_candidate_spec
+    base_id = LEGACY_SWA7_EXPERIMENT_ID if args.legacy_swa7 else FINAL_EXPERIMENT_ID
+    spec = build(
         experiment_id=args.experiment_id
-        or (FINAL_EXPERIMENT_ID if args.split == "valid" else f"{FINAL_EXPERIMENT_ID}-test"),
+        or (base_id if args.split == "valid" else f"{base_id}-test"),
         evaluation_split=args.split,
         allow_test_split=bool(args.allow_test),
     )

@@ -326,5 +326,26 @@
   },
   "statistical_significance_claimed": false,
   "interpretation": "008 is the best validation candidate and is significantly better than the FM root under a paired user bootstrap (P=0.990, CI excludes zero), which the incumbent SWA7 is not (P=0.934, CI includes zero). Against the incumbent itself the gain is +0.000585 with P=0.888 and a CI that includes zero, so it is better on this validation set at every seed tried but not proven to generalize to a differently sampled user population.",
-  "test_policy": "TEST IS SEALED. No test split was loaded, scored or inspected during this sprint."
+  "test_policy": "TEST IS SEALED. No test split was loaded, scored or inspected during this sprint.",
+  "finalization": {
+    "note": "Written after the sprint. During the sprint itself the test split was sealed; every experiment above ran on valid.",
+    "accepted_as_submission_candidate": "final-tiered-ensemble",
+    "selection_rule": "validation primary, fixed before any test run",
+    "test_runs_executed_after_freeze": 1,
+    "test_primary_final_tiered_ensemble": 0.5963753615661991,
+    "test_primary_superseded_swa7": 0.596386214222103,
+    "test_delta": -1.0852655903947905e-05,
+    "test_paired_bootstrap": {
+      "reps": 2000,
+      "seed": 7,
+      "delta": -1.0852655902837682e-05,
+      "paired_bootstrap_sd": 0.0003791709805261544,
+      "ci95_low": -0.0007453572015261589,
+      "ci95_high": 0.0007482314361520497,
+      "p_delta_gt_0": 0.515,
+      "source": "docs/evidence/final_tiered_vs_swa7_test.json"
+    },
+    "honest_reading": "The validation gain did NOT transfer. On test the two candidates are statistically indistinguishable (P=0.515). The validation-selected candidate was kept because switching after seeing a test number would be test-driven selection.",
+    "canonical": "docs/evidence/canonical_benchmark.json"
+  }
 }

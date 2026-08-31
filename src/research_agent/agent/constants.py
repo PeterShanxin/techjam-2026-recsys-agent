@@ -135,12 +135,20 @@ FM_ROOT_PARAMETERS: dict[str, Any] = {
 FM_ROOT_ENTRYPOINT = "src/research_agent/recommenders/fm_scorer.py"
 
 FROZEN_VALID_BEST: dict[str, Any] = {
-    "experiment_id": "final-swa7-ensemble",
+    "experiment_id": "final-tiered-ensemble",
     "split": "valid",
-    "GAUC": 0.6683660080655603,
-    "nDCG@5": 0.5362712572148608,
-    "primary": 0.6023186326402106,
-    "mechanism": "7-seed official FM + top-2 checkpoint SWA + raw probability mean",
+    "GAUC": 0.6690881485589812,
+    "nDCG@5": 0.536719279947655,
+    "primary": 0.6029037142533181,
+    "mechanism": (
+        "8 official FM members, top-2 checkpoint SWA each, tiered by train-row "
+        "selection and L2 strength, averaged as raw FM scores"
+    ),
+    "superseded": {
+        "experiment_id": "final-swa7-ensemble",
+        "primary": 0.6023186326402106,
+        "note": "Phase 4 winner. Beaten on validation by +0.0005851 (paired P=0.888).",
+    },
     "note": "Beat this on validation. Test is sealed.",
 }
 

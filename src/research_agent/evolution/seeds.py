@@ -8,14 +8,23 @@ from typing import Any, Iterable
 from research_agent.agent.constants import FM_ROOT_ID, FM_ROOT_PARAMETERS
 from research_agent.agent.root import UnusableRootError, is_usable_root_result
 from research_agent.experiments import ExperimentSpec, ImplementationRef
-from research_agent.final_candidate import FINAL_EXPERIMENT_ID, final_candidate_spec
+from research_agent.final_candidate import (
+    FINAL_EXPERIMENT_ID,
+    LEGACY_SWA7_EXPERIMENT_ID,
+    final_candidate_spec,
+    swa7_candidate_spec,
+)
 
 from .config import DEFAULT_STARTING_PRIOR_IDS
 
 ENSEMBLE_SEED_ID = "fm-ensemble-3seed"
 ENSEMBLE_ENTRYPOINT = "src/research_agent/recommenders/fm_ensemble_scorer.py"
 ENSEMBLE_REFERENCE_PRIMARY = 0.6021
-FINAL_PRIOR_ID = FINAL_EXPERIMENT_ID
+# The default prior set is historical: it is what the sprint-2 live run actually
+# started from. The Phase 5 candidate is resolvable as a prior but is not added to
+# the default set, so past evidence keeps describing the run that produced it.
+SWA7_PRIOR_ID = LEGACY_SWA7_EXPERIMENT_ID
+TIERED_PRIOR_ID = FINAL_EXPERIMENT_ID
 MATCHED_STARTING_SEED_IDS = (FM_ROOT_ID, *DEFAULT_STARTING_PRIOR_IDS)
 
 
@@ -54,26 +63,48 @@ def ensemble_seed_spec(
 
 def final_swa7_prior_spec(
     *,
-    experiment_id: str = FINAL_PRIOR_ID,
+    experiment_id: str = SWA7_PRIOR_ID,
     timeout_seconds: float = 1800.0,
     seed: int = 0,
 ) -> ExperimentSpec:
-    spec = final_candidate_spec(
+    """Phase 4 SWA+7-seed prior. Superseded as the submission candidate, but this is
+    the prior the sprint-2 live run started from, so it stays exactly as it was."""
+    return swa7_candidate_spec(
         experiment_id=experiment_id,
         evaluation_split="valid",
         allow_test_split=False,
         timeout_seconds=timeout_seconds,
         seed=seed,
     )
-    return spec
+
+
+def tiered_prior_spec(
+    *,
+    experiment_id: str = TIERED_PRIOR_ID,
+    timeout_seconds: float = 1800.0,
+    seed: int | None = None,
+) -> ExperimentSpec:
+    """Phase 5 candidate as a resolvable prior. Not in the default prior set."""
+    kwargs: dict[str, Any] = {}
+    if seed is not None:
+        kwargs["seed"] = seed
+    return final_candidate_spec(
+        experiment_id=experiment_id,
+        evaluation_split="valid",
+        allow_test_split=False,
+        timeout_seconds=timeout_seconds,
+        **kwargs,
+    )
 
 
 def prior_spec_for(prior_id: str, **kwargs: Any) -> ExperimentSpec:
     if prior_id == ENSEMBLE_SEED_ID:
         return ensemble_seed_spec(**kwargs)
-    if prior_id == FINAL_PRIOR_ID:
-        allowed = {key: kwargs[key] for key in ("experiment_id", "timeout_seconds", "seed") if key in kwargs}
-        return final_swa7_prior_spec(**allowed)
+    keys = ("experiment_id", "timeout_seconds", "seed")
+    if prior_id == SWA7_PRIOR_ID:
+        return final_swa7_prior_spec(**{key: kwargs[key] for key in keys if key in kwargs})
+    if prior_id == TIERED_PRIOR_ID:
+        return tiered_prior_spec(**{key: kwargs[key] for key in keys if key in kwargs})
     raise KeyError(f"unknown starting prior id: {prior_id}")
 
 

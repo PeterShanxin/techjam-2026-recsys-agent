@@ -11,7 +11,8 @@ from research_agent.evolution import EvolutionConfig, EvolutionController
 from research_agent.evolution.diversity import duplicate_reason
 from research_agent.evolution.seeds import (
     ENSEMBLE_SEED_ID,
-    FINAL_PRIOR_ID,
+    SWA7_PRIOR_ID,
+    TIERED_PRIOR_ID,
     final_swa7_prior_spec,
     prior_spec_for,
     resolve_prior_specs,
@@ -40,16 +41,27 @@ def _mini_prior(tmp_path: Path, experiment_id: str, *, family: str, extra_params
     )
 
 
-def test_final_candidate_is_a_starting_prior_spec():
+def test_swa7_prior_stays_the_historical_prior_after_the_phase5_swap():
+    """Sprint 2 started from SWA7. Swapping the submission candidate must not
+    retroactively change what the prior set says the run started from."""
     spec = final_swa7_prior_spec()
-    assert spec.experiment_id == FINAL_EXPERIMENT_ID == FINAL_PRIOR_ID
+    assert spec.experiment_id == SWA7_PRIOR_ID == "final-swa7-ensemble"
+    assert spec.experiment_id != FINAL_EXPERIMENT_ID
+    assert spec.implementation.entrypoint.endswith("fm_swa7_ensemble_scorer.py")
     assert spec.evaluation_split == "valid"
     assert spec.allow_test_split is False
     assert spec.parameters["num_models"] == 7
     assert spec.parameters["top_k_checkpoints"] == 2
     ids = [item.experiment_id for item in resolve_prior_specs()]
-    assert ids == [ENSEMBLE_SEED_ID, FINAL_PRIOR_ID]
-    assert prior_spec_for(FINAL_PRIOR_ID).experiment_id == FINAL_PRIOR_ID
+    assert ids == [ENSEMBLE_SEED_ID, SWA7_PRIOR_ID]
+    assert prior_spec_for(SWA7_PRIOR_ID).experiment_id == SWA7_PRIOR_ID
+
+
+def test_phase5_candidate_is_resolvable_as_a_prior_but_not_a_default():
+    spec = prior_spec_for(TIERED_PRIOR_ID)
+    assert spec.experiment_id == TIERED_PRIOR_ID == FINAL_EXPERIMENT_ID
+    assert spec.implementation.entrypoint.endswith("tiered_ensemble_scorer.py")
+    assert TIERED_PRIOR_ID not in [item.experiment_id for item in resolve_prior_specs()]
 
 
 def test_starting_priors_do_not_consume_new_evaluation_budget(tmp_path: Path):
@@ -67,11 +79,11 @@ def test_starting_priors_do_not_consume_new_evaluation_budget(tmp_path: Path):
     )
     priors = [
         _mini_prior(tmp_path, ENSEMBLE_SEED_ID, family="ensemble"),
-        _mini_prior(tmp_path, FINAL_PRIOR_ID, family="ensemble", extra_params={"swa": True}),
+        _mini_prior(tmp_path, SWA7_PRIOR_ID, family="ensemble", extra_params={"swa": True}),
     ]
     root, *seeds = ensure_matched_starting_seeds(agent, prior_specs=priors)
     assert root.experiment_id == FM_ROOT_ID
-    assert [item.spec.experiment_id for item in seeds] == [ENSEMBLE_SEED_ID, FINAL_PRIOR_ID]
+    assert [item.spec.experiment_id for item in seeds] == [ENSEMBLE_SEED_ID, SWA7_PRIOR_ID]
     assert agent.ledger.research_calls == 0
     ctl = EvolutionController(
         agent=agent,
@@ -88,8 +100,8 @@ def test_starting_priors_do_not_consume_new_evaluation_budget(tmp_path: Path):
     run = ctl.run()
     assert run.evaluated_offspring == 0
     ids = {item.experiment_id for item in run.population.members}
-    assert {FM_ROOT_ID, ENSEMBLE_SEED_ID, FINAL_PRIOR_ID} <= ids
-    assert FINAL_PRIOR_ID in {item.experiment_id for item in run.all_members}
+    assert {FM_ROOT_ID, ENSEMBLE_SEED_ID, SWA7_PRIOR_ID} <= ids
+    assert SWA7_PRIOR_ID in {item.experiment_id for item in run.all_members}
 
 
 def test_frozen_best_can_be_generation_zero_elite():
@@ -109,7 +121,7 @@ def test_frozen_best_can_be_generation_zero_elite():
             changed_axes=("ensembling",),
         ),
         make_member(
-            experiment_id=FINAL_PRIOR_ID,
+            experiment_id=SWA7_PRIOR_ID,
             metrics={"GAUC": 0.668366, "nDCG@5": 0.536271, "primary": 0.6023186},
             research_validity="hypothesis_tested",
             research_family="ensemble",
@@ -121,7 +133,7 @@ def test_frozen_best_can_be_generation_zero_elite():
     ctl.config = EvolutionConfig(elite_count=2)
     marked = EvolutionController._mark_elites(ctl, members)
     elites = [item.experiment_id for item in marked if item.selection == "elite"]
-    assert elites[0] == FINAL_PRIOR_ID
+    assert elites[0] == SWA7_PRIOR_ID
 
 
 def test_multiple_model_family_signatures_can_coexist():

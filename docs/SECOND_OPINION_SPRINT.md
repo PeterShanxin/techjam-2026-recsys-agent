@@ -155,8 +155,49 @@ incumbent.**
 
 Runtime: 184 s versus the incumbent's 383 s, for 8 members versus 7.
 
-## 5. Status
+## 5. Finalization
 
-`final-swa7-ensemble` and `submission.csv` are **unchanged**. Swapping the submission
-candidate is a human decision and needs a test-split scoring run, which this sprint did
-not perform.
+Sprint-2 candidate 008 was accepted as the Phase 5 submission candidate under the project's
+standing rule (validation primary), frozen as `final-tiered-ensemble`, and run on **test once**
+for the official CSV. `submit.py --check` passed on 170,588 rows.
+
+`final-swa7-ensemble` is retained unchanged as historical evidence and stays runnable with
+`scripts/run_final_candidate.py --split valid --legacy-swa7`. Nothing in
+[`PERFORMANCE_SPRINT.md`](PERFORMANCE_SPRINT.md) or the Phase 4 evidence was rewritten.
+
+### The test result did not confirm the validation gain
+
+| Candidate | Valid primary | Test primary |
+| --- | --- | --- |
+| `final-tiered-ensemble` (submitted) | **0.6029037** | **0.5963754** |
+| `final-swa7-ensemble` (superseded) | 0.6023186 | 0.5963862 |
+
+The +0.00059 validation margin became **−0.0000109** on test. Paired user bootstrap on test
+(observation only, 2000 reps, seed 7): 95% CI [−0.0007454, +0.0007482], P(Δ>0) = **0.515**.
+The two candidates are statistically indistinguishable on test.
+
+We kept the validation-selected candidate. The alternative — swapping back after seeing the
+test number — is test-driven selection, which is the failure mode this whole system exists to
+prevent. Both candidates lose ~0.006 from validation to test, which is a property of the split.
+
+### Cost
+
+Like-for-like, both as committed repo files through the same harness:
+
+| Split | tiered | swa7 | Δ |
+| --- | --- | --- | --- |
+| valid | **173.9s** | 225.0s | −22.7% |
+| test | **208.6s** | 216.7s | −3.7% |
+
+Cheaper despite one more member (8 vs 7), because four members train on filtered rows and all
+early-stop sooner. The live-elite figures (183.7s vs 383.4s) ran under different load and are
+not a fair head-to-head.
+
+### One wording correction
+
+`starter/kuairand/baseline.py` `FM.predict` returns **logits**, not probabilities. Both frozen
+scorers therefore average raw FM scores, not probabilities, and their docstrings say
+"probability" incorrectly. No score or model changed - only the description. The scorer files
+are left byte-identical so the `source_fingerprint` values recorded in `runs/*/result.json`
+stay valid; the correction is recorded as `aggregation_space_correction` in
+[`evidence/canonical_benchmark.json`](evidence/canonical_benchmark.json).

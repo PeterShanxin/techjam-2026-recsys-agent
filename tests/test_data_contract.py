@@ -103,7 +103,9 @@ def test_research_state_includes_data_contract(tmp_path: Path):
     payload = state.to_dict()
     contract = payload["data_contract"]
     assert contract["official_target"] == "long_view"
-    assert payload["frozen_valid_best"]["experiment_id"] == "final-swa7-ensemble"
+    assert payload["frozen_valid_best"]["experiment_id"] == "final-tiered-ensemble"
+    # the superseded candidate is carried alongside, not erased
+    assert payload["frozen_valid_best"]["superseded"]["experiment_id"] == "final-swa7-ensemble"
     assert payload["test_policy"].startswith("TEST IS SEALED")
     assert contract["load"]["tuple_fields"][6]["name"] == "long_view"
     assert "is_like" in contract["not_available_via_load"]

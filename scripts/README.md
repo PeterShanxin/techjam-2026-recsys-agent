@@ -48,13 +48,26 @@ Competition envelope (50 evals, 6h, ε=0.002, patience=3). FakeProvider spends n
 
 ## Frozen final candidate
 
-In-repo copy of the Phase 4 winner. Not a gitignored `runs/generated/` path.
+In-repo copy of the sprint-2 autonomous elite `final-tiered-ensemble`. Not a gitignored
+`runs/generated/` path. `--legacy-swa7` runs the superseded Phase 4 winner instead.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid --legacy-swa7
 .\.venv\Scripts\python.exe scripts\run_final_candidate.py --split test --allow-test
-.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-swa7-ensemble-test\scores.npy --split test --output submission.csv
+.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-tiered-ensemble-test\scores.npy --split test --output submission.csv
 ```
+
+## Paired user bootstrap
+
+Validation deltas in this project are smaller than the absolute bootstrap SD (~0.0022),
+so comparisons must be paired on the same resampled users.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\paired_bootstrap.py --baseline runs\fm-root\scores.npy --candidate runs\sprint2-tiered-ensemble\scores.npy
+```
+
+`--split test` additionally requires `--allow-test` and is post-freeze observation only.
 
 Test split is submission-only. `--allow-test` does not feed elite ranking. `submission.csv` is gitignored.
 

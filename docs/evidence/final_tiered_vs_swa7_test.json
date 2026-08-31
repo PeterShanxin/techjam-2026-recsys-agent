@@ -1,0 +1,15 @@
+{
+  "split": "test",
+  "users": 23875,
+  "rows": 170588,
+  "reps": 2000,
+  "seed": 7,
+  "swa7 test": 0.5963862142221026,
+  "tiered test": 0.5963753615661997,
+  "delta": -1.0852655902837682e-05,
+  "paired_bootstrap_sd": 0.0003791709805261544,
+  "ci95_low": -0.0007453572015261589,
+  "ci95_high": 0.0007482314361520497,
+  "p_delta_gt_0": 0.515,
+  "selection_use": "forbidden: post-freeze observation only"
+}

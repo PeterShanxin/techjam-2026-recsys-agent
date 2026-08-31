@@ -61,6 +61,12 @@ def _primary(ndcg: np.ndarray, gauc: np.ndarray, weight: np.ndarray, pick: np.nd
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Paired user bootstrap on the validation split.")
     ap.add_argument("--baseline", required=True)
+    ap.add_argument("--split", default=RESEARCH_SPLIT, choices=("valid", "test"))
+    ap.add_argument(
+        "--allow-test",
+        action="store_true",
+        help="Required with --split test. Observation only; never for selection.",
+    )
     ap.add_argument("--candidate", required=True)
     ap.add_argument("--data-dir", default=str(ROOT / "starter" / "kuairand" / "KuaiRand-Pure" / "data"))
     ap.add_argument("--reps", type=int, default=2000)
@@ -69,8 +75,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--label-candidate", default="candidate")
     ap.add_argument("--json", default=None)
     args = ap.parse_args(argv)
+    if args.split == "test" and not args.allow_test:
+        raise SystemExit("--split test requires --allow-test; test never informs selection")
 
-    rows = official_load(args.data_dir)[RESEARCH_SPLIT]
+    rows = official_load(args.data_dir)[args.split]
     users = [row[1] for row in rows]
     labels = [row[6] for row in rows]
     base = np.asarray(np.load(args.baseline), dtype=np.float64).reshape(-1)
@@ -95,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         boots[rep] = _primary(*cand_stats, pick) - _primary(*base_stats, pick)
 
     report = {
-        "split": RESEARCH_SPLIT,
+        "split": args.split,
         "users": int(n_users),
         "rows": int(len(rows)),
         "reps": int(args.reps),
@@ -114,6 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"paired bootstrap sd      = {report['paired_bootstrap_sd']:.7f}")
     print(f"95% CI                   = [{report['ci95_low']:+.7f}, {report['ci95_high']:+.7f}]")
     print(f"P(delta > 0)             = {report['p_delta_gt_0']:.4f}")
+    if args.split == "test":
+        report["selection_use"] = "forbidden: post-freeze observation only"
+        print("split                    = test (observation only, not selection)")
     if args.json:
         Path(args.json).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {args.json}")

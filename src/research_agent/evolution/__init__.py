@@ -14,7 +14,8 @@ from .fitness import compute_fitness, is_elite_eligible, rank_members, select_el
 from .lineage import format_lineage, lineage_forest, scoped_lineage_ids, session_lineage_forest
 from .seeds import (
     ENSEMBLE_SEED_ID,
-    FINAL_PRIOR_ID,
+    SWA7_PRIOR_ID,
+    TIERED_PRIOR_ID,
     MATCHED_STARTING_SEED_IDS,
     ensemble_seed_spec,
     ensure_matched_starting_seeds,
@@ -32,7 +33,8 @@ __all__ = [
     "DEFAULT_STARTING_PRIOR_IDS",
     "MATCHED_STARTING_SEED_IDS",
     "ENSEMBLE_SEED_ID",
-    "FINAL_PRIOR_ID",
+    "SWA7_PRIOR_ID",
+    "TIERED_PRIOR_ID",
     "EvolutionConfig",
     "EvolutionController",
     "EvolutionRun",

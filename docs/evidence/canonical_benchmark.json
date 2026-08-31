@@ -8,7 +8,7 @@
   "live_model": "gemini-3.6-flash",
   "thinking_level": "medium",
   "final_search_decision": "A",
-  "final_search_reason": "Existing 6-evaluation matched pilot is the submission evidence. Evolution delta vs starting elite is +0.0002077, about 10x below the official convergence epsilon 0.002. A 50-iteration live run would burn hours for a likely still-sub-epsilon leaderboard change. Competition budgets are proven in software with FakeProvider.",
+  "final_search_reason": "Phase 4 stopped at decision A. An independent second-opinion audit then found three reachability defects in the search space; those were fixed and one further autonomous sprint ran, which converged on its own with budget remaining. Technical search is closed: the residual measurable headroom is below the validation noise floor.",
   "cautious_conclusion": "Under the same prior knowledge and six new experiment evaluations, evolutionary search found an additional validation improvement while the matched sequential search did not surpass the starting elite.",
   "statistical_significance_claimed": false,
   "fm_root": {
@@ -27,45 +27,92 @@
     "delta_vs_fm": 0.0006421666830120909
   },
   "final_candidate": {
-    "experiment_id": "final-swa7-ensemble",
-    "live_elite_id": "rs-20260830T133522Z-0e304128-004",
-    "live_parent_id": "rs-20260830T133522Z-0e304128-003",
-    "entrypoint": "src/research_agent/recommenders/fm_swa7_ensemble_scorer.py",
-    "mechanism": "7-seed official FM bagging; each seed averages parameters from its top-2 validation-primary checkpoints; raw probability mean across seeds",
+    "experiment_id": "final-tiered-ensemble",
+    "phase": "phase5",
+    "selected_on": "validation primary",
+    "live_elite_id": "rs-20260831T062638Z-939b7000-008",
+    "live_parent_ids": [
+      "rs-20260831T062638Z-939b7000-007",
+      "rs-20260831T062638Z-939b7000-006"
+    ],
+    "discovered_by": "autonomous Gemini research agent, sprint 2, crossover of 007 x 006",
+    "entrypoint": "src/research_agent/recommenders/tiered_ensemble_scorer.py",
+    "spec_valid": "configs/experiments/final_tiered_valid.json",
+    "spec_test": "configs/experiments/final_tiered_test.json",
+    "mechanism": "8 official FM members, each averaging parameters from its top-2 validation-primary checkpoints (SWA); members split across three tiers differing in BOTH train-row selection and L2 strength; member scores averaged as raw FM scores (logits)",
+    "tiers": [
+      {
+        "members": 2,
+        "train_rows": "users with >=3 impressions and mixed labels",
+        "l2": 0.0001
+      },
+      {
+        "members": 2,
+        "train_rows": "users with >=2 impressions and mixed labels",
+        "l2": 1e-05
+      },
+      {
+        "members": 4,
+        "train_rows": "full train split",
+        "l2": 1e-06
+      }
+    ],
     "parameters": {
       "k": 16,
       "lr": 0.001,
       "epochs": 40,
       "batch": 8192,
       "patience": 4,
-      "l2": 1e-6,
-      "num_models": 7,
-      "top_k_checkpoints": 2
+      "top_k_checkpoints": 2,
+      "num_strict": 2,
+      "num_moderate": 2,
+      "num_full": 4,
+      "l2_strict": 0.0001,
+      "l2_moderate": 1e-05,
+      "l2_full": 1e-06
     },
-    "seed": 0,
-    "GAUC": 0.6683660080655603,
-    "nDCG@5": 0.5362712572148608,
-    "primary": 0.6023186326402106,
-    "primary_display": "0.6023186",
-    "delta_vs_fm": 0.000849876287251577,
-    "delta_vs_starting_elite": 0.00020770960423943663,
-    "delta_vs_starting_elite_display": "+0.0002077",
-    "live_runtime_seconds": 383.35770449999836,
-    "live_source_fingerprint": "d85faac9efe2adf18dd92489217f911d6fcb40782bc0d3d44f58a3446fcc12f8",
-    "repo_source_sha256_lf": "d0727f0a6be138190743ab975a0385949a72f2f847c2bccff69806e6064c6c6d",
-    "fingerprint_note": "Repo copy keeps the live algorithm. Docstring and path change the hash versus the gitignored generated candidate.",
+    "parameters_note": "Every tier setting is baked into the frozen entrypoint. Both specs pass an EMPTY config so the live elite reproduces bitwise (config fingerprint = sha256 of the two-character empty JSON object).",
+    "seed": 42,
+    "seed_note": "Seed 42 is the agent's own choice. Seeds 7 and 2024 scored higher on validation; picking one of those after the fact would be selection across replicates.",
+    "GAUC": 0.6690881485589812,
+    "nDCG@5": 0.536719279947655,
+    "primary": 0.6029037142533181,
+    "primary_display": "0.6029037",
+    "delta_vs_fm": 0.0014349579003590796,
+    "delta_vs_fm_display": "+0.0014350",
+    "delta_vs_superseded_swa7": 0.000585081613107552,
+    "delta_vs_superseded_swa7_display": "+0.0005851",
+    "live_runtime_seconds": 183.68912139999156,
+    "live_source_fingerprint": "5d9663fbc58947a2ca4aad95e9fb1a8f30c9b025d3c7fa395ff77f98d76fb7ad",
+    "repo_source_sha256_lf": "92ace207531572c88ddc2375c0f5fadba80586837d503ad2543572b33f7ec879",
+    "repo_source_fingerprint": "7ccbc2c9737daef4fb75559cc0a38f7a8c1a124fe8cfcee3800da32e3d0f182a",
+    "fingerprint_note": "Repo copy keeps the live algorithm. Only the docstring was rewritten to record provenance, which changes the hash versus the gitignored generated candidate.",
     "type_a_rerun": {
-      "experiment_id": "final-swa7-ensemble",
-      "command": ".venv\\Scripts\\python.exe scripts\\run_final_candidate.py --split valid",
+      "experiment_id": "sprint2-tiered-ensemble",
+      "command": "run_experiment.py --spec configs/experiments/final_tiered_valid.json",
       "replicates": 1,
       "interpretation": "Type A same-seed re-execution of the frozen repo copy. Not Type B different-seed variance.",
-      "GAUC": 0.6683660080655603,
-      "nDCG@5": 0.5362712572148608,
-      "primary": 0.6023186326402106,
+      "GAUC": 0.6690881485589812,
+      "nDCG@5": 0.536719279947655,
+      "primary": 0.6029037142533181,
       "matches_live_elite": true,
-      "wall_seconds": 224.99170810000214,
-      "live_elite_wall_seconds": 383.35770449999836
-    }
+      "wall_seconds": 173.87616769998567,
+      "live_elite_wall_seconds": 183.68912139999156
+    },
+    "type_b_different_seeds": [
+      {
+        "seed": 42,
+        "primary": 0.6029037142533181
+      },
+      {
+        "seed": 7,
+        "primary": 0.602983849040599
+      },
+      {
+        "seed": 2024,
+        "primary": 0.6031161217212104
+      }
+    ]
   },
   "methods": [
     {
@@ -156,23 +203,206 @@
       "wall_seconds": 1984.5237082999993,
       "manual_interventions": 0,
       "stop_reason": "generation_limit"
+    },
+    {
+      "id": "sprint2_evolution",
+      "method": "Sprint 2 evolutionary search (after the second-opinion audit fixes)",
+      "starting_priors": "fm-root + fm-ensemble-3seed + final-swa7-ensemble",
+      "new_evaluations": 7,
+      "session_id": "rs-20260831T062638Z-939b7000",
+      "best_experiment_id": "rs-20260831T062638Z-939b7000-008",
+      "best_GAUC": 0.6690881485589812,
+      "best_nDCG@5": 0.536719279947655,
+      "best_primary": 0.6029037142533181,
+      "primary_display": "0.6029037",
+      "delta_vs_fm": 0.0014349579003590796,
+      "delta_vs_starting_elite": 0.000585081613107552,
+      "delta_vs_starting_elite_display": "+0.0005851",
+      "llm_calls": 12,
+      "research_calls": 9,
+      "repair_calls": 3,
+      "mutation_calls": 3,
+      "crossover_calls": 6,
+      "total_tokens": 415105,
+      "input_tokens": 298971,
+      "output_tokens": 41662,
+      "thinking_tokens": 74472,
+      "cached_tokens": 47429,
+      "wall_seconds": 2761.3714233000064,
+      "manual_interventions": 0,
+      "stop_reason": "converged"
     }
   ],
   "submission_artifact": {
     "format": "CSV header row_id,user_id,video_id,score",
     "split": "test",
     "rows": 170588,
+    "scored_by": "final-tiered-ensemble-test",
     "generated_local": true,
     "committed": false,
+    "gitignored": true,
     "official_check": "pass",
+    "official_check_output": "format and alignment check passed: 170,588 rows, split=test",
     "used_for_selection": false,
-    "command": ".venv\\Scripts\\python.exe scripts\\run_final_candidate.py --split test --allow-test && .venv\\Scripts\\python.exe scripts\\make_submission.py --scores runs\\final-swa7-ensemble-test\\scores.npy --split test --output submission.csv",
-    "check_command": ".venv\\Scripts\\python.exe starter\\kuairand\\submit.py --check --split test --data_dir starter\\kuairand\\KuaiRand-Pure\\data submission.csv",
-    "local_test_metrics_not_for_selection": {
-      "note": "Official evaluate.py can score local test labels. These numbers were computed AFTER the candidate was frozen on validation. They did not change the candidate.",
-      "GAUC": 0.6631816944117339,
-      "nDCG@5": 0.529590734032472,
-      "primary": 0.596386214222103
+    "test_runs_executed": 1,
+    "command": "scripts/run_final_candidate.py --split test --allow-test && scripts/make_submission.py --scores runs/final-tiered-ensemble-test/scores.npy --split test --output submission.csv",
+    "check_command": "starter/kuairand/submit.py --check --split test --data_dir starter/kuairand/KuaiRand-Pure/data submission.csv",
+    "test_observation_not_for_selection": {
+      "note": "Official evaluate.py can score local test labels. These numbers were computed AFTER model selection was frozen on validation. They did not change the candidate, and no candidate was compared on test before the freeze.",
+      "final-tiered-ensemble": {
+        "GAUC": 0.6631899708209658,
+        "nDCG@5": 0.5295607523114325,
+        "primary": 0.5963753615661991,
+        "primary_display": "0.5963754",
+        "wall_seconds": 208.58951979999256
+      },
+      "superseded_final-swa7-ensemble": {
+        "GAUC": 0.6631816944117339,
+        "nDCG@5": 0.529590734032472,
+        "primary": 0.596386214222103,
+        "primary_display": "0.5963862",
+        "wall_seconds": 216.6907957000003
+      },
+      "delta": -1.0852655903947905e-05,
+      "delta_display": "-0.0000109",
+      "honest_reading": "The +0.00059 validation gain did NOT transfer to test. The test difference is -0.0000109, which is 35x smaller than the paired test bootstrap SD (0.00038): P(delta>0)=0.515, a coin flip. On test the two candidates are statistically indistinguishable. The validation-selected candidate was kept anyway, because changing it now would be test-driven selection.",
+      "valid_to_test_shift": {
+        "final-tiered-ensemble": -0.006528352687119043,
+        "final-swa7-ensemble": -0.0059324184181075434,
+        "note": "Both candidates lose about 0.0065 from validation to test; the shift is a property of the split, not of either model."
+      }
     }
+  },
+  "significance_policy": {
+    "meaning": "No significance is claimed for the Phase 5 candidate over the superseded Phase 4 candidate, and none against the organizer convergence epsilon 0.002.",
+    "one_comparison_does_clear_95pct": "final-tiered-ensemble vs fm-root on validation: P(delta>0)=0.990, 95% CI [+0.00026, +0.00262]. Paired user bootstrap, validation split only.",
+    "test_split": "On test the Phase 5 and Phase 4 candidates are statistically indistinguishable: delta -0.0000109, 95% CI [-0.00075, +0.00075], P(delta>0)=0.515.",
+    "validation_noise_floor": {
+      "absolute_primary_bootstrap_sd": 0.00216,
+      "paired_delta_bootstrap_sd_typical": 0.0005
+    }
+  },
+  "aggregation_space_correction": "starter/kuairand/baseline.py FM.predict returns LOGITS, not probabilities. Every ensemble in this project therefore averages raw FM scores (logits), not probabilities. Earlier descriptions in this file and in the frozen scorers' docstrings said 'probability mean'; that wording was wrong and is corrected here. No score, metric or model changed - only the description. The frozen scorer files are left byte-identical so the source fingerprints recorded in runs/*/result.json stay valid.",
+  "superseded_phase4_candidate": {
+    "experiment_id": "final-swa7-ensemble",
+    "phase": "phase4",
+    "status": "superseded on validation by final-tiered-ensemble; retained as historical evidence",
+    "still_runnable": "scripts/run_final_candidate.py --split valid --legacy-swa7",
+    "live_elite_id": "rs-20260830T133522Z-0e304128-004",
+    "live_parent_id": "rs-20260830T133522Z-0e304128-003",
+    "entrypoint": "src/research_agent/recommenders/fm_swa7_ensemble_scorer.py",
+    "mechanism": "7-seed official FM bagging; each seed averages parameters from its top-2 validation-primary checkpoints; mean of raw FM scores (logits) across seeds",
+    "parameters": {
+      "k": 16,
+      "lr": 0.001,
+      "epochs": 40,
+      "batch": 8192,
+      "patience": 4,
+      "l2": 1e-06,
+      "num_models": 7,
+      "top_k_checkpoints": 2
+    },
+    "seed": 0,
+    "GAUC": 0.6683660080655603,
+    "nDCG@5": 0.5362712572148608,
+    "primary": 0.6023186326402106,
+    "primary_display": "0.6023186",
+    "delta_vs_fm": 0.0008498762872515275,
+    "delta_vs_starting_elite": 0.00020770960423943663,
+    "delta_vs_starting_elite_display": "+0.0002077",
+    "live_runtime_seconds": 383.35770449999836,
+    "repo_source_sha256_lf": "d0727f0a6be138190743ab975a0385949a72f2f847c2bccff69806e6064c6c6d",
+    "type_a_rerun": {
+      "primary": 0.6023186326402106,
+      "matches_live_elite": true,
+      "wall_seconds": 224.99170810000214
+    }
+  },
+  "paired_user_bootstrap": {
+    "method": "resample validation users with replacement; recompute the official primary for both score vectors on the same resample",
+    "why_paired": "Resampling users gives an ABSOLUTE primary standard deviation of about 0.0022, which swamps every delta in this project. Two models scored on the same resampled users share that variance, so the paired difference is the only honest comparison here.",
+    "script": "scripts/paired_bootstrap.py",
+    "comparisons": [
+      {
+        "baseline": "fm-root",
+        "candidate": "final-tiered-ensemble",
+        "split": "valid",
+        "reps": 2000,
+        "seed": 7,
+        "users": 22377,
+        "delta": 0.0014349579003596347,
+        "paired_bootstrap_sd": 0.0006087429255252255,
+        "ci95_low": 0.00025771810506795,
+        "ci95_high": 0.0026169210124425525,
+        "p_delta_gt_0": 0.99
+      },
+      {
+        "baseline": "final-swa7-ensemble",
+        "candidate": "final-tiered-ensemble",
+        "split": "valid",
+        "reps": 2000,
+        "seed": 7,
+        "users": 22377,
+        "delta": 0.000585081613107552,
+        "paired_bootstrap_sd": 0.00046878690691677064,
+        "ci95_low": -0.0003427019743273141,
+        "ci95_high": 0.0015006563278528577,
+        "p_delta_gt_0": 0.888
+      },
+      {
+        "baseline": "fm-root",
+        "candidate": "final-swa7-ensemble",
+        "split": "valid",
+        "reps": 2000,
+        "seed": 7,
+        "users": 22377,
+        "delta": 0.0008498762872520826,
+        "paired_bootstrap_sd": 0.0005429727314809586,
+        "ci95_low": -0.00020860237801234306,
+        "ci95_high": 0.0018664014927518065,
+        "p_delta_gt_0": 0.934
+      },
+      {
+        "baseline": "final-swa7-ensemble-test",
+        "candidate": "final-tiered-ensemble-test",
+        "split": "test",
+        "reps": 2000,
+        "seed": 7,
+        "users": 23875,
+        "delta": -1.0852655902837682e-05,
+        "paired_bootstrap_sd": 0.0003791709805261544,
+        "ci95_low": -0.0007453572015261589,
+        "ci95_high": 0.0007482314361520497,
+        "p_delta_gt_0": 0.515
+      }
+    ],
+    "reading": "The Phase 5 candidate is the first in this project to clear a 95% paired interval against the FM root (P=0.990). Its margin over the Phase 4 candidate does not clear 95% (P=0.888). The Phase 4 candidate's own margin over the FM root also did not clear 95% (P=0.934)."
+  },
+  "runtime_comparison": {
+    "note": "Like-for-like means both candidates run as committed repo files through the same harness in the foreground. The live-elite figures ran inside an evolution sprint under different load and are not a fair head-to-head.",
+    "like_for_like": {
+      "valid": {
+        "final-tiered-ensemble": 173.87616769998567,
+        "final-swa7-ensemble": 224.99170810000214,
+        "delta_seconds": -51.11554040001647,
+        "relative": -0.22718855211009437
+      },
+      "test": {
+        "final-tiered-ensemble": 208.58951979999256,
+        "final-swa7-ensemble": 216.6907957000003,
+        "delta_seconds": -8.10127590000775,
+        "relative": -0.03738634063268498
+      }
+    },
+    "live_elite_runs_not_head_to_head": {
+      "final-tiered-ensemble": 183.68912139999156,
+      "final-swa7-ensemble": 383.35770449999836
+    },
+    "members": {
+      "final-tiered-ensemble": 8,
+      "final-swa7-ensemble": 7
+    },
+    "summary": "The Phase 5 candidate is cheaper than the Phase 4 candidate on the same harness despite having one more member, because four of its eight members train on filtered rows and its members early-stop sooner. The saving is 22.7% on validation and 3.7% on test; the test gap is smaller because scoring 170,588 rows with 8 members costs more than with 7, which offsets part of the training saving.",
+    "gpu_hours": 0
   }
 }

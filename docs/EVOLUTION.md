@@ -60,7 +60,7 @@ generations = 2
 max_new_evaluations = 6
 ```
 
-Seeds: official FM root plus configurable validated priors. Default priors are `fm-ensemble-3seed` and `final-swa7-ensemble`. Priors do not consume the new-evaluation budget. The frozen validation best must be eligible as a Generation-0 elite.
+Seeds: official FM root plus configurable validated priors. Default priors are `fm-ensemble-3seed` and `final-swa7-ensemble` - the set the last live sprint actually started from, kept unchanged so past evidence still describes its own run. The Phase 5 candidate `final-tiered-ensemble` is resolvable as a prior but is not in the default set. Priors do not consume the new-evaluation budget. The frozen validation best must be eligible as a Generation-0 elite.
 
 Generated candidates may import `research_agent.lab.SplitSafeStore` for train-only history, popularity, catalogs, and pairwise samples. Helpers are instruments, not a hidden ranker. Test remains sealed.
 

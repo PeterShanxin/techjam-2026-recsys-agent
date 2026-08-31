@@ -1,0 +1,20 @@
+{
+  "experiment_id": "final-tiered-ensemble",
+  "parent_ids": [
+    "rs-20260831T062638Z-939b7000-007",
+    "rs-20260831T062638Z-939b7000-006"
+  ],
+  "hypothesis": "Split an 8-member SWA FM ensemble across three tiers that differ in both train-row selection and L2 strength, keeping half the members on the full catalog, and average the members in probability space.",
+  "rationale": "Sprint-2 autonomous evolutionary search selected this mechanism on validation as elite rs-20260831T062638Z-939b7000-008. Frozen for submission; test is not used for selection.",
+  "origin": "crossover",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/tiered_ensemble_scorer.py"
+  },
+  "parameters": {},
+  "seed": 42,
+  "evaluation_split": "valid",
+  "timeout_seconds": 1800,
+  "allow_test_split": false,
+  "tags": ["phase5", "final", "family:ensemble", "mech:swa", "mech:bagging", "mech:tiered_variance_filtering", "mech:tier_adaptive_l2"],
+  "notes": "Canonical repo copy of the sprint-2 autonomous elite. Empty parameters on purpose: every tier setting is baked into the frozen entrypoint, so the live elite reproduces bitwise."
+}

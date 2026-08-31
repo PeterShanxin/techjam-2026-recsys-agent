@@ -521,3 +521,26 @@ def test_unreadable_protected_path_fails_the_run_instead_of_crashing(harness, mo
     result = run_candidate(harness, "pass", experiment_id="walk-error")
     assert result.status == "invalid"
     assert result.failure.kind == "integrity"
+
+
+def test_between_attempt_mutation_is_caught_before_labels_are_loaded(harness):
+    """A helper outliving attempt N must not poison attempt N+1's labels.
+
+    subprocess.run waits only on the direct child, so the tree can change
+    between attempts. Reading labels early is only sound if the tree is
+    verified first -- otherwise the next attempt loads poisoned labels and the
+    post-run hash sees restored bytes.
+    """
+    runner, tmp_path, protected = harness
+    first = run_candidate(harness, "pass", experiment_id="between-first")
+    assert first.status == "success"
+
+    # Stand-in for a surviving grandchild: mutate after attempt N returned.
+    (protected / "evaluate.py").write_text("POISONED\n", encoding="utf-8")
+
+    second = run_candidate(harness, "pass", experiment_id="between-second")
+    assert second.status == "invalid"
+    assert second.failure.kind == "integrity"
+    assert second.metrics is None and second.scores_path is None
+    # Caught in pre-flight, so the candidate never even ran.
+    assert second.return_code is None

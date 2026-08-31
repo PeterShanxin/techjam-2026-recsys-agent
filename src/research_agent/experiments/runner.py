@@ -58,6 +58,14 @@ PUBLISHED_EXECUTION = ("scores.npy", "stdout.log", "stderr.log", "metadata.json"
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
+class _IntegrityDrift(Exception):
+    """Protected assets already differ from the session baseline."""
+
+    def __init__(self, failure: FailureInfo) -> None:
+        super().__init__(failure.message)
+        self.failure = failure
+
+
 class ExperimentRunner:
     def __init__(
         self,
@@ -174,13 +182,19 @@ class ExperimentRunner:
             assert_split_allowed(registered.evaluation_split, allow)
             if not self.data_dir.is_dir():
                 raise SpecError(f"data dir not found: {self.data_dir}")
+            # Verify *before* reading anything. subprocess.run waits only on
+            # the direct child, so a helper outliving an earlier attempt could
+            # rewrite the dataset between attempts; without this check the
+            # next attempt would load those labels and only hash afterwards,
+            # by which time the bytes could be restored.
+            drift = self._integrity_failure(pre_run_manifest, attempt_id)
+            if drift is not None:
+                raise _IntegrityDrift(drift)
             # Must succeed before the subprocess starts: after that, a lazy
             # resolve could pick up a source or bytecode file left behind.
             _bind_official_modules(strict=True)
-            # Read the labels now, while the tree is known-good. subprocess.run
-            # waits only on the direct child, so a detached grandchild could
-            # rewrite the dataset between the post-run hash and a later read;
-            # scoring from this in-memory copy removes that window entirely.
+            # Read the labels now, from the tree just verified. Scoring uses
+            # this in-memory copy, so there is no later disk read to race.
             splits = official_load(self.data_dir)
             if registered.evaluation_split not in splits:
                 raise SpecError(f"unknown evaluation split: {registered.evaluation_split}")
@@ -204,7 +218,11 @@ class ExperimentRunner:
                 canonical_json(metadata) + "\n", encoding="utf-8"
             )
         except Exception as exc:
-            kind = "test_split" if isinstance(exc, ForbiddenTestSplit) else "spec"
+            if isinstance(exc, _IntegrityDrift):
+                failure = exc.failure
+            else:
+                kind = "test_split" if isinstance(exc, ForbiddenTestSplit) else "spec"
+                failure = FailureInfo(kind, str(exc))
             return self._finish(
                 registered,
                 run_dir,
@@ -216,7 +234,7 @@ class ExperimentRunner:
                 metrics=None,
                 source_fp="",
                 config_fp=config_fingerprint(registered.parameters),
-                failure=FailureInfo(kind, str(exc)),
+                failure=failure,
                 entrypoint=self._resolve_entrypoint(registered),
             )
 

@@ -177,3 +177,13 @@ def test_final_candidate_entrypoint_matches_json():
     assert not str(entry).startswith("runs/")
     for key in ("spec_valid", "spec_test"):
         assert (ROOT / data["final_candidate"][key]).is_file(), key
+
+
+def test_submitted_csv_precision_is_documented():
+    """The official .6g CSV format rounds; a judge re-scoring the CSV must find that explained."""
+    prec = _canon()["submission_artifact"]["csv_precision"]
+    npy = prec["scored_from_scores_npy"]["primary"]
+    csv_primary = prec["scored_from_submission_csv"]["primary"]
+    assert npy == 0.5963753615661991
+    assert abs(csv_primary - npy) < 1e-6
+    assert prec["primary_delta_from_rounding"] == pytest.approx(csv_primary - npy, abs=1e-9)

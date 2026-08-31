@@ -86,6 +86,11 @@ ALLOWED_EVENTS = frozenset(
         # sys.setprofile all hand back frame objects, and on 3.13+ frame
         # f_locals writes through -- which reaches the hook's closure cells.
         "sys._getframemodulename",
+        # Interpreter teardown, raised while the process is finalising. These
+        # are the destruction half of the cpython.* namespace; creation
+        # (PyInterpreterState_New) stays denied.
+        "cpython.PyInterpreterState_Clear",
+        "cpython.PyInterpreterState_Delete",
     }
 )
 
@@ -174,7 +179,6 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
     _realpath = os.path.realpath
     _normcase = os.path.normcase
     _isabs = os.path.isabs
-    _fspath = os.fspath
     _isinstance = isinstance
     _sep = os.sep
     _fsencoding = sys.getfilesystemencoding()
@@ -186,9 +190,16 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
     _allowed_prefixes = ALLOWED_PREFIXES
     _write_path_args = WRITE_PATH_ARGS
     _exit = os._exit
-    _stderr = sys.stderr
     _denied_modules = DENIED_MODULES
     _denied_module_paths = DENIED_MODULE_PATHS
+    # Bound now, not looked up per call: `sys.stderr.write` is assignable, so
+    # a late-bound lookup would run candidate code with the hook frame live on
+    # the stack -- and from there `f_back` reaches the cells below.
+    _stderr_write = sys.stderr.write
+    _stderr_flush = sys.stderr.flush
+    _linesep = os.linesep
+    _prefix = VIOLATION_MARKER + ": "
+    _exit_code = VIOLATION_EXIT_CODE
 
     def deny(message):
         """End the process rather than raising into candidate code.
@@ -199,20 +210,31 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
         read roots, and the allow list. Exiting removes that surface, and a
         candidate that reaches for an escape has no legitimate recovery path
         anyway. The runner reports the attempt as failed.
+
+        Nothing here may run candidate code: every name is captured, and
+        `message` is always a str this module built. No str()/repr() is
+        applied to a candidate-controlled value anywhere on this path.
         """
         try:
-            _stderr.write(VIOLATION_MARKER + ": " + str(message) + os.linesep)
-            _stderr.flush()
-        except Exception:  # noqa: BLE001 - never let reporting block the exit
+            _stderr_write(_prefix + message + _linesep)
+            _stderr_flush()
+        except BaseException:  # noqa: BLE001 - never let reporting block the exit
             pass
-        _exit(VIOLATION_EXIT_CODE)
+        _exit(_exit_code)
+
+    def as_text(value):
+        """A str safe to put in a message: never invokes candidate __repr__."""
+        return value if _isinstance(value, str) else "<non-text value>"
 
     def canonical(value):
-        """Absolute, symlink-resolved, case-folded path, or None."""
-        try:
-            raw = _fspath(value)
-        except TypeError:
-            return None
+        """Absolute, symlink-resolved, case-folded path, or None.
+
+        Only str and bytes are accepted. Calling os.fspath on an arbitrary
+        object would run its __fspath__ inside this hook -- `open` and `os.*`
+        hand the audit event an already-normalised str, but `shutil.*` events
+        pass whatever the caller supplied.
+        """
+        raw = value
         if _isinstance(raw, bytes):
             try:
                 raw = raw.decode(_fsencoding, "surrogateescape")
@@ -269,9 +291,9 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                 return  # existing descriptor; its open() was already checked
             path = canonical(target)
             if path is None:
-                deny(f"candidate may not open an unresolvable path: {target!r}")
+                deny("candidate may not open an unresolvable path: " + as_text(target))
             if contained(path, denied_reads):
-                deny(f"candidate may not read {target!r}")
+                deny("candidate may not read " + as_text(target))
             mode = args[1] if len(args) > 1 else None
             flags = args[2] if len(args) > 2 else None
             writing = (_isinstance(flags, int) and flags & _write_flags) or (
@@ -279,11 +301,9 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
             )
             if writing:
                 if not contained(path, writable):
-                    deny(
-                        f"candidate may not write outside its sandbox: {target!r}"
-                    )
+                    deny("candidate may not write outside its sandbox: " + as_text(target))
             elif not contained(path, readable):
-                deny(f"candidate may not read outside its sandbox: {target!r}")
+                deny("candidate may not read outside its sandbox: " + as_text(target))
             return
 
         indices = _write_path_args.get(event)
@@ -296,11 +316,10 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                     continue
                 path = canonical(value)
                 if path is None:
-                    deny(f"candidate may not {event} on {value!r}")
+                    deny("candidate may not " + event + " on " + as_text(value))
                 if not contained(path, writable):
-                    deny(
-                        f"candidate may not {event} outside its sandbox: {value!r}"
-                    )
+                    deny("candidate may not " + event + " outside its sandbox: "
+                         + as_text(value))
             return
 
         if event == "import":
@@ -309,7 +328,8 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                 if module.split(".", 1)[0] in _denied_modules or module.startswith(
                     _denied_module_paths
                 ):
-                    deny(f"candidate may not import {module!r} (subinterpreters escape the hook)")
+                    deny("candidate may not import " + as_text(module)
+                         + " (subinterpreters escape the hook)")
             # A candidate that writes a shared library into its sandbox and
             # imports it runs native constructors, which fopen/write with no
             # Python event at all. Both routes are visible here: a direct
@@ -322,15 +342,15 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                 # the runner sets to a write root, so an unresolvable module
                 # path is exactly the escape this branch exists to stop.
                 if loaded is None:
-                    deny(f"candidate may not import from a relative path: {filename!r}")
+                    deny("candidate may not import from a relative path: " + as_text(filename))
                 if contained(loaded, writable):
-                    deny(f"candidate may not import from its writable sandbox: {filename!r}")
+                    deny("candidate may not import from its writable sandbox: " + as_text(filename))
             for entry in (args[2] if len(args) > 2 else None) or ():
                 resolved = canonical(entry) if entry else None
                 if resolved is None:
-                    deny(f"candidate may not import with a relative sys.path entry: {entry!r}")
+                    deny("candidate may not import with a relative sys.path entry: " + as_text(entry))
                 if contained(resolved, writable):
-                    deny(f"candidate may not put a writable directory on sys.path: {entry!r}")
+                    deny("candidate may not put a writable directory on sys.path: " + as_text(entry))
             return
 
         if event == "os.add_dll_directory":
@@ -343,7 +363,7 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
 
         if event in _allowed_events or event.startswith(_allowed_prefixes):
             return
-        deny(f"candidate may not use {event} (not permitted in sandbox)")
+        deny("candidate may not use " + event + " (not permitted in sandbox)")
 
     sys.addaudithook(hook)
 

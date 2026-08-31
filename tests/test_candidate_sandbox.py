@@ -899,3 +899,77 @@ def test_subinterpreter_and_native_namespaces_are_not_allowlisted():
                   "ctypes.dlopen", "sqlite3.connect"):
         assert event not in guard.ALLOWED_EVENTS
         assert not event.startswith(guard.ALLOWED_PREFIXES), event
+
+
+# --------------------------------------------------------------------------
+# Round-4 Cursor finding: re-entry into the hook via candidate-controlled
+# objects and rebound stdlib attributes
+# --------------------------------------------------------------------------
+
+
+def test_denial_path_cannot_be_hijacked_by_rebinding_stderr(sandbox):
+    """`sys.stderr.write` is assignable, so it must be bound at install time.
+
+    A late-bound lookup would run candidate code with the hook frame live on
+    the stack, and `f_back` from there reaches the closure cells holding the
+    roots -- including `_exit`, which could be nopped so the denied operation
+    proceeds.
+    """
+    runner, _, protected = sandbox
+    attack = """
+    import sys as _s
+    marker = Path(cfg["output_scores"]).with_name("hijacked.txt")
+
+    def evil(*a, **k):
+        marker.write_text("stderr.write hijacked", encoding="utf-8")
+        return 0
+
+    _s.stderr.write = evil
+    open(str(Path(cfg["protected"]) / ("eval" + "uate.py")), "w").write("x")
+    """
+    result, changes = run_attack(sandbox, attack, experiment_id="hijack-stderr")
+    assert changes == {}
+    assert candidate_output(runner, "hijack-stderr", "hijacked.txt") is None
+    assert_blocked(result, "stderr hijack")
+
+
+def test_hook_never_calls_repr_on_candidate_objects(sandbox):
+    """`shutil.*` events carry the caller's own objects, unlike `open`.
+
+    CPython normalises paths to str before raising `open`/`os.*`, but a
+    Python-level `sys.audit("shutil.copyfile", src, dst)` passes whatever was
+    handed in -- so a `__repr__` or `__fspath__` in a denial message would
+    execute candidate code inside the hook.
+    """
+    runner, _, protected = sandbox
+    attack = """
+    import shutil as _sh
+    marker = Path(cfg["output_scores"]).with_name("reentered.txt")
+
+    class Evil:
+        def __fspath__(self):
+            marker.write_text("__fspath__ ran inside the hook", encoding="utf-8")
+            return str(Path(cfg["protected"]) / ("eval" + "uate.py"))
+
+        def __repr__(self):
+            marker.write_text("__repr__ ran inside the hook", encoding="utf-8")
+            return "innocent"
+
+    _sh.copyfile(str(Path(cfg["output_scores"])), Evil())
+    """
+    result, changes = run_attack(sandbox, attack, experiment_id="repr-reentry")
+    assert changes == {}
+    assert candidate_output(runner, "repr-reentry", "reentered.txt") is None, (
+        "candidate code ran inside the audit hook"
+    )
+    assert_blocked(result, "repr re-entry")
+
+
+def test_interpreter_teardown_events_do_not_fail_a_clean_run():
+    """Denying all of cpython.* would kill every run during finalisation."""
+    from research_agent.experiments import candidate_guard as guard
+
+    assert "cpython.PyInterpreterState_Clear" in guard.ALLOWED_EVENTS
+    assert "cpython.PyInterpreterState_Delete" in guard.ALLOWED_EVENTS
+    assert "cpython.PyInterpreterState_New" not in guard.ALLOWED_EVENTS
+    assert not "cpython.PyInterpreterState_New".startswith(guard.ALLOWED_PREFIXES)

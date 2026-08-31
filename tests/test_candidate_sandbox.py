@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -470,3 +471,181 @@ def test_dataset_inside_starter_is_hashed_once_through_the_cache(tmp_path):
 
     (data_dir / "log.csv").write_text("a,b\n9,9\n", encoding="utf-8")
     assert diff_manifests(manifest, runner.protected_manifest())
+
+
+# --------------------------------------------------------------------------
+# Regressions for the Cursor Bugbot / Security Agent findings on PR #17
+# --------------------------------------------------------------------------
+
+ESCAPE_ATTACKS = {
+    # Security Agent: rebinding shared stdlib callables made the hook validate
+    # a different path than the kernel acted on.
+    "rebind_realpath": """
+    import os as _o
+    real = _o.path.realpath
+    allowed = str(Path(cfg["output_scores"]).parent)
+    _o.path.realpath = lambda p, *a, **k: allowed
+    try:
+        (Path(cfg["protected"]) / ("eval" + "uate.py")).write_text("PWNED", encoding="utf-8")
+    finally:
+        _o.path.realpath = real
+    """,
+    "rebind_fspath": """
+    import os as _o
+    real = _o.fspath
+    target = Path(cfg["protected"]) / ("eval" + "uate.py")
+    decoy = str(Path(cfg["output_scores"]).parent / "decoy")
+    _o.fspath = lambda p: decoy
+    try:
+        target.write_text("PWNED", encoding="utf-8")
+    finally:
+        _o.fspath = real
+    """,
+    # Bugbot: module-level helpers were reachable through sys.modules.
+    "rebind_guard_helper": """
+    import sys as _s
+    for name, mod in list(_s.modules.items()):
+        if hasattr(mod, "SandboxViolation"):
+            for attr in ("canonical", "_normalise", "_contained", "contained"):
+                if hasattr(mod, attr):
+                    setattr(mod, attr, lambda *a, **k: None)
+    (Path(cfg["protected"]) / ("eval" + "uate.py")).write_text("PWNED", encoding="utf-8")
+    """,
+    # Security Agent: C-level writers that never raise an `open` event.
+    "sqlite3_native_write": """
+    import sqlite3 as _s
+    con = _s.connect(str(Path(cfg["protected"]) / "planted.sqlite"))
+    con.execute("create table t (a int)")
+    con.commit()
+    con.close()
+    """,
+    "dbm_native_write": """
+    import dbm as _d
+    with _d.open(str(Path(cfg["protected"]) / "planted_dbm"), "c") as db:
+        db["k"] = "v"
+    """,
+    # Security Agent: relative paths cannot be validated under POSIX dir_fd.
+    "relative_path_write": """
+    import os as _o
+    _o.chdir(str(Path(cfg["output_scores"]).parent))
+    open("relative_escape.txt", "w").write("x")
+    """,
+}
+
+
+# Rebinding os.fspath is the one case the guard does not answer with a
+# violation: pathlib calls os.fspath itself, so the candidate redirects its
+# own write into the sandbox. The hook still uses the captured original, so
+# the protected tree is untouched either way -- the attack only hurts the
+# attacker.
+SELF_DEFEATING = frozenset({"rebind_fspath"})
+
+
+@pytest.mark.parametrize("name,attack", sorted(ESCAPE_ATTACKS.items()))
+def test_sandbox_escape_is_blocked(sandbox, name, attack):
+    runner, _, _ = sandbox
+    result, changes = run_attack(sandbox, attack, experiment_id=f"esc-{name}")
+    assert changes == {}, f"{name} mutated protected assets: {changes}"
+    error = attack_error(runner, f"esc-{name}")
+    assert error, f"{name} completed without error; the escape may have succeeded"
+    if name not in SELF_DEFEATING:
+        assert_blocked(error, name)
+
+
+def test_candidate_cannot_read_files_outside_its_sandbox(sandbox):
+    """Reads are allowlisted, not merely deny-listed.
+
+    Without this, stripping secrets from the environment is theatre: the
+    candidate reads them back from a credential file or /proc/<ppid>/environ.
+    """
+    runner, tmp_path, _ = sandbox
+    creds = tmp_path / "fake_home" / "credentials"
+    creds.parent.mkdir()
+    creds.write_text("aws_secret_access_key = LEAKEDFROMDISK\n", encoding="utf-8")
+    attack = """
+    stolen = Path(cfg["creds"]).read_text(encoding="utf-8")
+    Path(cfg["output_scores"]).with_name("stolen.txt").write_text(stolen, encoding="utf-8")
+    """
+    result, _ = run_attack(
+        sandbox, attack, experiment_id="read-escape", params={"creds": str(creds)}
+    )
+    assert result.status == "success"
+    assert candidate_output(runner, "read-escape", "stolen.txt") is None
+    assert_blocked(attack_error(runner, "read-escape"), "host credential read")
+
+
+@pytest.mark.skipif(not Path("/proc").is_dir(), reason="POSIX /proc only")
+def test_candidate_cannot_read_parent_process_environ(sandbox):
+    runner, _, _ = sandbox
+    attack = """
+    import os as _o
+    blob = Path("/proc/%d/environ" % _o.getppid()).read_bytes()
+    Path(cfg["output_scores"]).with_name("ppid_env.bin").write_bytes(blob)
+    """
+    run_attack(sandbox, attack, experiment_id="proc-environ")
+    assert candidate_output(runner, "proc-environ", "ppid_env.bin") is None
+    assert_blocked(attack_error(runner, "proc-environ"), "/proc parent environ")
+
+
+def test_guard_denies_unknown_audit_events_by_default():
+    """Default-deny, not deny-listing: sqlite3 and dbm write from C.
+
+    Enumerating dangerous events cannot work -- `sqlite3.connect` raises no
+    `open` event at all, and on Windows `shutil.copy2` raises only
+    `_winapi.CopyFile2`.
+    """
+    from research_agent.experiments import candidate_guard as guard
+
+    for event in ("sqlite3.connect", "_winapi.CopyFile2", "ctypes.dlopen",
+                  "subprocess.Popen", "socket.connect", "os.symlink", "dbm.open"):
+        assert event not in guard.ALLOWED_EVENTS
+        assert not event.startswith(guard.ALLOWED_PREFIXES)
+
+
+def test_integrity_violation_is_latched_across_runs(sandbox):
+    """A dirty tree must not become the next run's clean baseline.
+
+    Re-snapshotting per attempt let a mutation that survived one run be
+    accepted as normal by the next, so a poisoned evaluator scored freely.
+    """
+    runner, tmp_path, protected = sandbox
+    candidate = build_candidate(tmp_path / "quiet.py", "pass")
+
+    def spec_for(name):
+        return make_spec(
+            experiment_id=name,
+            implementation=ImplementationRef(entrypoint=str(candidate)),
+            parameters={"protected": str(protected), "n": name},
+        )
+
+    original = runner._integrity_failure
+
+    def tamper_once(before, attempt_id):
+        (protected / "evaluate.py").write_text("POISONED\n", encoding="utf-8")
+        runner._integrity_failure = original
+        return original(before, attempt_id)
+
+    runner._integrity_failure = tamper_once
+    first = runner.run(spec_for("latch-first"))
+    second = runner.run(spec_for("latch-second"))
+
+    assert first.status == "invalid" and first.failure.kind == "integrity"
+    assert second.status == "invalid", "poisoned tree was re-baselined and scored"
+    assert second.failure.kind == "integrity"
+    assert second.metrics is None and second.scores_path is None
+
+
+def test_official_evaluator_is_bound_before_any_candidate_runs(tmp_path, monkeypatch):
+    """Blocks planted bytecode: __pycache__ is skipped by the integrity walk.
+
+    Once `evaluate` is resolved in sys.modules the parent cannot be steered to
+    a different implementation, whether by a replaced source file or a
+    hash-based .pyc that loads without checking its source.
+    """
+    monkeypatch.delitem(sys.modules, "evaluate", raising=False)
+    monkeypatch.delitem(sys.modules, "data", raising=False)
+    assert "evaluate" not in sys.modules
+
+    ExperimentRunner(runs_dir=tmp_path / "runs", data_dir=write_mini_dataset(tmp_path))
+    assert "evaluate" in sys.modules, "evaluator was not bound at runner construction"
+    assert "data" in sys.modules

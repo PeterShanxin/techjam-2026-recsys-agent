@@ -99,20 +99,42 @@ concatenation or `exec` of a computed string.
 
 | Layer | What it does |
 | --- | --- |
-| Environment allowlist | The subprocess environment is built from `{}` and receives only allowlisted names (`PATH`, locale, CPU/thread pins, Windows `SystemRoot`). No Gemini/OpenAI/Anthropic/GitHub/cloud credential reaches a candidate, and `.env` is unreadable from inside the sandbox. |
-| Write boundary | A CPython audit hook (`experiments/candidate_guard.py`) confines every filesystem primitive to the attempt's own `out/`, `work/`, and `tmp/` directories. Paths are compared after `realpath`, so `../`, symlinks, and junctions resolve first. Process creation, `ctypes`, and network access are denied. |
+| Environment allowlist | The subprocess environment is built from `{}` and receives only allowlisted names (`PATH`, locale, CPU/thread pins, Windows `SystemRoot`). No Gemini/OpenAI/Anthropic/GitHub/cloud credential reaches a candidate. |
+| Write boundary | A CPython audit hook (`experiments/candidate_guard.py`) confines every filesystem primitive to the attempt's `out/`, `work/`, and `tmp/` directories. |
+| Read boundary | Reads are allowlisted too -- stdlib, site-packages, the experiment inputs, the candidate's own file. Otherwise stripping the environment is theatre: the candidate reads the secrets back from `/proc/<ppid>/environ`, `~/.aws/credentials`, or the repo `.env`. |
 | Integrity verification | Evaluator, starter, `src/research_agent`, and dataset assets are SHA-256 hashed before and after every attempt. Any added, removed, or modified file fails the run as `status="invalid"` with `failure.kind="integrity"` -- it never reaches the evaluator and never publishes a metric. Each result records `protected_manifest_sha256`. |
 
-Unknown audit events in filesystem/process namespaces are denied rather than
-allowed, so a primitive the guard has not enumerated fails closed. The AST
-checks in `agent/safety.py` remain, demoted to advisory lint that gives the
-proposer fast feedback.
+Four properties carry the boundary:
+
+- **Audit events are default-deny.** Only events that cannot touch the
+  filesystem, spawn a process, or load native code are allowed. Enumerating
+  *dangerous* events does not work: `sqlite3.connect` writes a database from C
+  without raising a single `open` event, and on Windows `shutil.copy2` raises
+  only `_winapi.CopyFile2`. A real scorer raises 12 distinct events, so the
+  allow list is small and stable.
+- **Paths must be absolute.** A POSIX `*at` syscall resolves a relative path
+  against a `dir_fd` while the hook would resolve it against the process cwd,
+  so a relative path cannot be validated soundly. Absolute paths make `dir_fd`
+  irrelevant by definition.
+- **Nothing the hook depends on is reachable from candidate code.** Helpers and
+  stdlib callables are captured as closure locals at install time; otherwise
+  rebinding `os.path.realpath` or a module-level helper via `sys.modules` makes
+  the hook validate a different path than the kernel acts on.
+- **The integrity baseline is latched.** It is taken once per session and never
+  re-derived, so a mutation that survives one run cannot become the next run's
+  accepted baseline. Once tripped, every later attempt in that session fails
+  too. The parent also binds the official evaluator before any candidate runs,
+  so planted bytecode cannot be loaded later.
+
+The AST checks in `agent/safety.py` remain, demoted to advisory lint that gives
+the proposer fast feedback.
 
 Consequence for candidates: write only to the directory of `--output-scores`,
-and stay single-process. `tests/test_candidate_sandbox.py` covers direct
-writes, `../` traversal, absolute paths, symlink escape, rename/replace,
-`shutil.copy2`, `exec` of computed source, dynamic import via `getattr`,
-subprocess-based mutation, and `ctypes`.
+use absolute paths, and stay single-process. `tests/test_candidate_sandbox.py`
+covers direct writes, `../` traversal, absolute paths, symlink escape,
+rename/replace, `shutil.copy2`, `exec` of computed source, dynamic import via
+`getattr`, subprocess-based mutation, `ctypes`, native writers (`sqlite3`,
+`dbm`), stdlib rebinding, out-of-sandbox reads, and the latched baseline.
 
 ## Limitations
 

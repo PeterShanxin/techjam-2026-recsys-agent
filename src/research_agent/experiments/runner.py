@@ -26,6 +26,7 @@ from research_agent.evaluation.official import (
     EVALUATE_PY,
     REPO_ROOT,
     STARTER,
+    ensure_starter_on_path,
     official_evaluate,
     official_load,
     split_labels,
@@ -80,6 +81,11 @@ class ExperimentRunner:
         # Bulk reference data: hashed, but skipped when size and mtime are
         # untouched. os.utime outside the sandbox is denied by the guard.
         self._data_hash_cache: dict[str, tuple[int, int, str]] = {}
+        # Baseline is captured once and never re-derived: re-snapshotting per
+        # run would silently adopt a poisoned tree as the new "clean" state.
+        self._baseline: ProtectedManifest | None = None
+        self._compromised: FailureInfo | None = None
+        _bind_official_modules()
 
     def protected_manifest(self) -> ProtectedManifest:
         """SHA-256 of every asset a candidate is forbidden to change."""
@@ -117,7 +123,7 @@ class ExperimentRunner:
         _clear_published_execution(run_dir)
 
         started = time.perf_counter()
-        pre_run_manifest = self.protected_manifest()
+        pre_run_manifest = self._baseline_manifest()
         try:
             assert_split_allowed(registered.evaluation_split, allow)
             if not self.data_dir.is_dir():
@@ -186,6 +192,12 @@ class ExperimentRunner:
             "numpy",
             "--preimport",
             "data",
+            # Readable, never writable: stdlib and site-packages come from the
+            # guard's own sys.path, these are the experiment inputs.
+            "--read-root",
+            str(self.data_dir),
+            "--read-root",
+            str(run_dir),
         ]
         for secret_path in self._denied_read_paths():
             command += ["--deny-read", str(secret_path)]
@@ -365,14 +377,28 @@ class ExperimentRunner:
         roots = {self.repo_root, REPO_ROOT}
         return [root / name for root in roots for name in _SECRET_FILE_NAMES]
 
+    def _baseline_manifest(self) -> ProtectedManifest:
+        """The one true snapshot, taken before the first attempt of this session.
+
+        Deliberately never refreshed. Re-snapshotting before each attempt would
+        let a mutation that survived one run become the accepted baseline for
+        the next, so a tampered evaluator would score every later experiment
+        without another integrity failure.
+        """
+        if self._baseline is None:
+            self._baseline = self.protected_manifest()
+        return self._baseline
+
     def _integrity_failure(
         self, before: ProtectedManifest, attempt_id: str
     ) -> FailureInfo | None:
-        """Compare protected assets against the pre-run snapshot."""
+        """Compare protected assets against the session baseline."""
+        if self._compromised is not None:
+            return self._compromised
         changes = diff_manifests(before, self.protected_manifest())
         if not changes:
             return None
-        return FailureInfo(
+        failure = FailureInfo(
             "integrity",
             (
                 "protected evaluator/starter/reference assets changed during this "
@@ -380,6 +406,10 @@ class ExperimentRunner:
             ),
             {"changes": changes, "attempt_id": attempt_id},
         )
+        # Latched: the tree stays dirty until a human restores it, so every
+        # later attempt in this session fails too instead of re-baselining.
+        self._compromised = failure
+        return failure
 
     def _resolve_entrypoint(self, spec: ExperimentSpec) -> Path:
         raw = Path(spec.implementation.entrypoint)
@@ -508,6 +538,23 @@ class ExperimentRunner:
         _publish_attempt(run_dir, attempt_dir, attempt_scores if status == "success" else None)
         self.registry.upsert_result(result)
         return result
+
+
+def _bind_official_modules() -> None:
+    """Import the official evaluator and loader before any candidate runs.
+
+    Once bound in sys.modules they cannot be re-resolved, so neither a
+    replaced source file nor a planted ``__pycache__/*.pyc`` (which the
+    integrity walk skips, because the parent legitimately creates bytecode
+    there) can change how this process scores anything.
+    """
+    try:
+        official_load  # noqa: B018 - module-level import already resolved
+        ensure_starter_on_path()
+        import data  # noqa: F401
+        import evaluate  # noqa: F401
+    except Exception:  # noqa: BLE001 - absent starter surfaces later as SpecError
+        pass
 
 
 def _clear_published_execution(run_dir: Path) -> None:

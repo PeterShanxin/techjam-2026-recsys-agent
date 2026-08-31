@@ -28,7 +28,10 @@ _ENV_RULE = (
     "(Python stdlib, listed allowed third-party packages, and starter modules data/baseline/evaluate). "
     "If the proposed method cannot execute, fail explicitly. "
     "Do not silently fall back to the FM baseline, the selected parent, or another algorithm "
-    "and emit those scores as evidence for the claimed hypothesis."
+    "and emit those scores as evidence for the claimed hypothesis. "
+    "Experiments run write-confined: the only writable location is the directory of "
+    "--output-scores (plus the process temp dir), and subprocess, multiprocessing, "
+    "ctypes, and network access are unavailable. Write scores with a single process."
 )
 
 

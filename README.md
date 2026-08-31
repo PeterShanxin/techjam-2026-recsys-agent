@@ -90,6 +90,30 @@ Official test CSV **after** freeze only:
 
 Do not use test scores to select experiments. `submission.csv` is gitignored.
 
+## Untrusted candidate execution
+
+Generated candidate code is treated as untrusted. Anything it could do to
+inflate its own score, or to read the agent's credentials, is blocked in the
+runtime -- not by scanning the generated source, which is defeated by string
+concatenation or `exec` of a computed string.
+
+| Layer | What it does |
+| --- | --- |
+| Environment allowlist | The subprocess environment is built from `{}` and receives only allowlisted names (`PATH`, locale, CPU/thread pins, Windows `SystemRoot`). No Gemini/OpenAI/Anthropic/GitHub/cloud credential reaches a candidate, and `.env` is unreadable from inside the sandbox. |
+| Write boundary | A CPython audit hook (`experiments/candidate_guard.py`) confines every filesystem primitive to the attempt's own `out/`, `work/`, and `tmp/` directories. Paths are compared after `realpath`, so `../`, symlinks, and junctions resolve first. Process creation, `ctypes`, and network access are denied. |
+| Integrity verification | Evaluator, starter, `src/research_agent`, and dataset assets are SHA-256 hashed before and after every attempt. Any added, removed, or modified file fails the run as `status="invalid"` with `failure.kind="integrity"` -- it never reaches the evaluator and never publishes a metric. Each result records `protected_manifest_sha256`. |
+
+Unknown audit events in filesystem/process namespaces are denied rather than
+allowed, so a primitive the guard has not enumerated fails closed. The AST
+checks in `agent/safety.py` remain, demoted to advisory lint that gives the
+proposer fast feedback.
+
+Consequence for candidates: write only to the directory of `--output-scores`,
+and stay single-process. `tests/test_candidate_sandbox.py` covers direct
+writes, `../` traversal, absolute paths, symlink escape, rename/replace,
+`shutil.copy2`, `exec` of computed source, dynamic import via `getattr`,
+subprocess-based mutation, and `ctypes`.
+
 ## Limitations
 
 - Matched pilot is six new evaluations, not 50.

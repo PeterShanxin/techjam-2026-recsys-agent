@@ -1,4 +1,16 @@
-"""Generated-code checks. Controlled research workspace, not a security sandbox."""
+"""Advisory checks on generated candidate source.
+
+These are lint, not the security boundary. They give the LLM fast, readable
+feedback (missing CLI flags, unsupported imports, silent dependency
+fallbacks) before an experiment is spent running.
+
+Source-level checks cannot be the boundary: any of them is defeated by string
+concatenation, ``getattr`` indirection, or ``exec`` of a computed string. The
+enforced boundary lives in the runtime instead --
+``experiments.candidate_guard`` (audit-hook write confinement, no parent
+credentials, no process/ctypes/network) and ``experiments.integrity``
+(before/after SHA-256 over evaluator, starter, source, and reference assets).
+"""
 from __future__ import annotations
 
 import ast
@@ -54,6 +66,12 @@ def assert_workspace_path(dest: Path, workspace_root: Path) -> None:
 
 
 def assert_no_evaluator_tampering(source: str, tree: ast.AST | None = None) -> None:
+    """Flag obvious evaluator writes early. Advisory only.
+
+    Trivially evaded (``"eval" + "uate.py"``), so it must never be relied on:
+    ExperimentRunner denies the write at runtime and hashes the evaluator
+    before and after every attempt.
+    """
     tree = tree or syntax_check(source)
     if _writes_forbidden_path(tree, source):
         raise SafetyError("candidate appears to modify starter/kuairand/evaluate.py")
@@ -221,5 +239,3 @@ def _is_stdlib(name: str) -> bool:
     except ValueError:
         return False
     return "site-packages" not in path.parts and "dist-packages" not in path.parts
-
-

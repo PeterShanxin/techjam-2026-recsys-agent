@@ -158,6 +158,13 @@ DENIED_MODULES = frozenset(
         "_xxinterpchannels",
         "_interpqueues",
         "_xxinterpqueues",
+        # _testcapi.run_in_subinterp is the same capability by another name,
+        # and these ship as stdlib extensions under a permitted read root.
+        "_testcapi",
+        "_testinternalcapi",
+        "_testmultiphase",
+        "_testsinglephase",
+        "_testlimitedcapi",
     }
 )
 DENIED_MODULE_PATHS = ("concurrent.interpreters",)
@@ -180,6 +187,7 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
     _normcase = os.path.normcase
     _isabs = os.path.isabs
     _isinstance = isinstance
+    _type = type
     _sep = os.sep
     _fsencoding = sys.getfilesystemencoding()
     _write_flags = (
@@ -223,8 +231,14 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
         _exit(_exit_code)
 
     def as_text(value):
-        """A str safe to put in a message: never invokes candidate __repr__."""
-        return value if _isinstance(value, str) else "<non-text value>"
+        """A plain str safe to put in a message.
+
+        Exact type check, not isinstance: a str *subclass* defining __radd__
+        would have its method called before str.__add__ when concatenated onto
+        a literal, running candidate code with the hook frame on the stack --
+        the same re-entry class as __repr__ and __fspath__.
+        """
+        return value if _type(value) is str else "<non-text value>"
 
     def canonical(value):
         """Absolute, symlink-resolved, case-folded path, or None.

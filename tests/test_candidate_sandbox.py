@@ -973,3 +973,41 @@ def test_interpreter_teardown_events_do_not_fail_a_clean_run():
     assert "cpython.PyInterpreterState_Delete" in guard.ALLOWED_EVENTS
     assert "cpython.PyInterpreterState_New" not in guard.ALLOWED_EVENTS
     assert not "cpython.PyInterpreterState_New".startswith(guard.ALLOWED_PREFIXES)
+
+
+def test_testcapi_subinterpreter_route_is_denied(sandbox):
+    """_testcapi.run_in_subinterp is the subinterpreter capability by another name."""
+    runner, tmp_path, _ = sandbox
+    attack = """
+    import _testcapi as _t
+    _t.run_in_subinterp("open(r'%s', 'w').write('x')" % cfg["escape_target"])
+    """
+    result, changes = run_attack(
+        sandbox, attack, experiment_id="testcapi-subinterp",
+        params={"escape_target": str(tmp_path / "testcapi_escape.txt")},
+    )
+    assert changes == {}
+    assert not (tmp_path / "testcapi_escape.txt").exists()
+    assert_blocked(result, "_testcapi subinterpreter")
+
+
+def test_str_subclass_cannot_re_enter_the_hook_through_concatenation(sandbox):
+    """A str subclass with __radd__ runs before str.__add__ on `literal + value`."""
+    runner, _, _ = sandbox
+    attack = """
+    marker = Path(cfg["output_scores"]).with_name("radd.txt")
+
+    class Evil(str):
+        def __radd__(self, other):
+            marker.write_text("__radd__ ran inside the hook", encoding="utf-8")
+            return other + str.__str__(self)
+
+    target = Evil(str(Path(cfg["protected"]) / ("eval" + "uate.py")))
+    open(target, "w").write("x")
+    """
+    result, changes = run_attack(sandbox, attack, experiment_id="radd-reentry")
+    assert changes == {}
+    assert candidate_output(runner, "radd-reentry", "radd.txt") is None, (
+        "candidate __radd__ ran inside the audit hook"
+    )
+    assert_blocked(result, "str subclass re-entry")

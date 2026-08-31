@@ -27,7 +27,7 @@ from .diversity import duplicate_reason, member_signature
 from .fitness import compute_fitness, rank_members, select_elites
 from .lineage import format_lineage, session_lineage_forest
 from .prompts import crossover_prompt, mutation_prompt
-from .seeds import ensure_prior_spec, ensemble_seed_spec
+from .seeds import ensure_prior_spec, prior_spec_for
 from .types import (
     EvolutionRun,
     GenerationRecord,
@@ -45,9 +45,16 @@ STOP_FATAL = "fatal_provider_error"
 
 
 class EvolutionController:
-    def __init__(self, *, agent: ResearchAgent, config: EvolutionConfig | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        agent: ResearchAgent,
+        config: EvolutionConfig | None = None,
+        prior_specs: list[ExperimentSpec] | None = None,
+    ) -> None:
         self.agent = agent
         self.config = config or EvolutionConfig()
+        self._prior_specs_override = prior_specs
         self.session_id = agent.session_id
         self.trace_dir = Path(agent.runner.runs_dir) / "evolution" / self.session_id
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -124,12 +131,13 @@ class EvolutionController:
         root_member = self._member_from_root(root)
         self.all_members.append(root_member)
         members = [root_member]
-        if self.config.include_ensemble_seed:
-            seed = self._ensure_ensemble_seed(root_member)
-            if seed is not None:
-                if seed.experiment_id not in {item.experiment_id for item in self.all_members}:
-                    self.all_members.append(seed)
-                members.append(seed)
+        for spec in self._starting_prior_specs(root_member.experiment_id):
+            seed = self._ensure_prior_member(spec)
+            if seed is None:
+                continue
+            if seed.experiment_id not in {item.experiment_id for item in self.all_members}:
+                self.all_members.append(seed)
+            members.append(seed)
         if self.config.fill_to_size_on_init:
             members = self._fill(members, generation=0)
         population = Population(members=self._mark_elites(members))
@@ -461,8 +469,15 @@ class EvolutionController:
         )
         return member
 
-    def _ensure_ensemble_seed(self, root: PopulationMember) -> PopulationMember | None:
-        spec = ensemble_seed_spec(parent_id=root.experiment_id)
+    def _starting_prior_specs(self, root_id: str) -> list[ExperimentSpec]:
+        if self._prior_specs_override is not None:
+            return list(self._prior_specs_override)
+        return [
+            prior_spec_for(prior_id, parent_id=root_id)
+            for prior_id in self.config.resolved_starting_prior_ids()
+        ]
+
+    def _ensure_prior_member(self, spec: ExperimentSpec) -> PopulationMember | None:
         existing = self.agent.runner.registry.peek(spec.experiment_id)
         reused = existing is not None and existing.result is not None
         entry = ensure_prior_spec(self.agent.runner, spec)
@@ -482,11 +497,14 @@ class EvolutionController:
             research_validity="hypothesis_tested" if entry.result.status == "success" else "implementation_failure",
             scientific_evidence=entry.result.status == "success",
         )
+        family = _family_from_tags(entry.spec.tags) or "ensemble"
+        tags = _tag_values(entry.spec.tags, "mech:") or ("bagging",)
+        axes = _tag_values(entry.spec.tags, "axis:") or ("ensembling",)
         member = member.with_updates(
             fitness=compute_fitness(member, efficiency_penalty=self.config.efficiency_penalty),
-            research_family="ensemble",
-            mechanism_tags=("bagging",),
-            changed_axes=("ensembling",),
+            research_family=family,
+            mechanism_tags=tags,
+            changed_axes=axes,
         )
         return member
 

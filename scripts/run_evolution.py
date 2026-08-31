@@ -72,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-new-evaluations", type=int, default=6)
     ap.add_argument("--token-budget", type=int, default=None)
     ap.add_argument("--no-ensemble-seed", action="store_true")
+    ap.add_argument(
+        "--starting-priors",
+        default=None,
+        help="Comma-separated prior experiment ids. Default: fm-ensemble-3seed,final-swa7-ensemble",
+    )
     ap.add_argument("--no-fill", action="store_true")
     ap.add_argument("--sequential-control", action="store_true")
     ap.add_argument(
@@ -88,6 +93,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     thinking = normalize_thinking_level(args.thinking)
+    starting_prior_ids = None
+    if args.no_ensemble_seed:
+        starting_prior_ids = ()
+    elif args.starting_priors:
+        starting_prior_ids = tuple(item.strip() for item in args.starting_priors.split(",") if item.strip())
     if args.provider == "fake":
         provider = FakeProvider(script=[])
         print("provider    fake (no API calls)")
@@ -116,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             population_size=args.population_size,
             elite_count=args.elite_count,
             include_ensemble_seed=not args.no_ensemble_seed,
+            starting_prior_ids=starting_prior_ids,
             fill_to_size_on_init=not args.no_fill,
             token_budget=args.token_budget,
             wall_clock_seconds=args.wall_clock if args.wall_clock is not None else 21600.0,
@@ -131,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
             generations=args.generations,
             max_new_evaluations=args.max_new_evaluations,
             include_ensemble_seed=not args.no_ensemble_seed,
+            starting_prior_ids=starting_prior_ids,
             fill_to_size_on_init=not args.no_fill,
             token_budget=args.token_budget,
             wall_clock_seconds=args.wall_clock,
@@ -182,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         control_n = max(1, run.evaluated_offspring)
         print("")
         print(f"=== sequential control ({control_n} iterations, independent registry) ===")
-        print("priors      fm-root + fm-ensemble-3seed (not counted as new evaluations)")
+        print("priors      fm-root + configured starting priors (not counted as new evaluations)")
         control_dir = runs_dir / "sequential-control"
         control_runner = ExperimentRunner(
             repo_root=ROOT,
@@ -209,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
             print(redact_text(str(exc)), file=sys.stderr)
             return 2
         compare = {
-            "starting_seeds": ["fm-root", "fm-ensemble-3seed"],
+            "starting_seeds": list(config.resolved_starting_prior_ids()),
             "new_evaluations": control_n,
             "evolution": {
                 "best": None if not run.elites else run.elites[0].to_dict(),

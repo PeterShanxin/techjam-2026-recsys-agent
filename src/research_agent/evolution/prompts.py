@@ -19,6 +19,10 @@ You must state:
 - what result would support or refute the hypothesis
 
 Honor ResearchState.data_contract. data.load() tuples do not include is_like or play_time_ms.
+You may import research_agent.lab (SplitSafeStore) for train-only history, popularity, catalogs, and pairwise samples.
+Train-derived features must use train. TEST IS SEALED. Validation labels are not features.
+Current weakness is homogeneous FM refinement. Prefer a genuinely different family when evidence supports it.
+Do not jitter seeds/LR/averaging without a reason.
 Stay inside the environment. Validation split only. Do not modify evaluate.py.
 Return structured JSON. candidate_source must be a complete candidate file.
 Set operator to "mutation". Set selected_parent_id to the provided parent.
@@ -41,7 +45,8 @@ Do not force a combined method that cannot work. The controller will fall back t
 If compatible, set crossover_compatible to true and write one complete candidate that combines the named components.
 Do not hard-code a specific combination. Decide from the parent evidence.
 
-Honor ResearchState.data_contract and environment. Validation split only.
+Honor ResearchState.data_contract and environment. Validation split only. TEST IS SEALED.
+You may use research_agent.lab instruments. They are not a ranker.
 Return structured JSON. Set operator to "crossover".
 """
 

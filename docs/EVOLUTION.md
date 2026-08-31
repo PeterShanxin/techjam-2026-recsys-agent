@@ -60,7 +60,9 @@ generations = 2
 max_new_evaluations = 6
 ```
 
-Seeds: official FM root + verified 3-seed FM ensemble (`fm-ensemble-3seed`).
+Seeds: official FM root plus configurable validated priors. Default priors are `fm-ensemble-3seed` and `final-swa7-ensemble`. Priors do not consume the new-evaluation budget. The frozen validation best must be eligible as a Generation-0 elite.
+
+Generated candidates may import `research_agent.lab.SplitSafeStore` for train-only history, popularity, catalogs, and pairwise samples. Helpers are instruments, not a hidden ranker. Test remains sealed.
 
 Fitness: validation primary. Runtime/tokens are tie-breakers and reporting, not the objective.
 
@@ -93,3 +95,5 @@ Official Track 2 envelope (do not spend this live unless a human decides it is w
 ```
 
 `EvolutionConfig.competition()` sets max 50 new evaluations, 6h wall-clock, ε=0.002, patience=3. FakeProvider tests prove stop reasons without waiting six hours.
+
+P0 post-freeze research-space expansion and one bounded quality sprint: [`PERFORMANCE_SPRINT.md`](PERFORMANCE_SPRINT.md). That sprint does **not** replace the Phase 5 submission candidate.

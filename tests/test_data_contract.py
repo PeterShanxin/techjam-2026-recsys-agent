@@ -71,6 +71,8 @@ def test_data_contract_matches_starter_load_tuple():
         "dur_bucket",
     ]
     assert payload["official_target"] == "long_view"
+    assert payload["test_sealed"] is True
+    assert payload["lab"]["import"].startswith("from research_agent.lab")
     assert payload["evaluation"]["task"] == "within-user ranking"
     assert payload["evaluation"]["metrics"] == ["GAUC", "nDCG@5"]
     assert payload["evaluation"]["primary"] == "mean(GAUC, nDCG@5)"
@@ -101,6 +103,8 @@ def test_research_state_includes_data_contract(tmp_path: Path):
     payload = state.to_dict()
     contract = payload["data_contract"]
     assert contract["official_target"] == "long_view"
+    assert payload["frozen_valid_best"]["experiment_id"] == "final-swa7-ensemble"
+    assert payload["test_policy"].startswith("TEST IS SEALED")
     assert contract["load"]["tuple_fields"][6]["name"] == "long_view"
     assert "is_like" in contract["not_available_via_load"]
     assert "play_time_ms" in contract["not_available_via_load"]
@@ -127,6 +131,8 @@ def test_sequential_prompt_includes_data_capabilities(tmp_path: Path):
     assert "play_time_ms" in prompt
     assert "not_available_via_load" in prompt
     assert "long_view" in prompt
+    assert "research_agent.lab" in prompt
+    assert "TEST IS SEALED" in prompt
 
 
 def test_soft_label_claim_without_loader_fields_is_rejected(tmp_path: Path):

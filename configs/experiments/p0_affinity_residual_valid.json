@@ -1,0 +1,27 @@
+{
+  "experiment_id": "p0-affinity-residual",
+  "parent_ids": ["final-swa7-ensemble"],
+  "hypothesis": "Superimpose a Laplace-smoothed, zero-centered user-author affinity residual derived strictly from train interactions onto 7-seed top-2 SWA FM scores.",
+  "rationale": "P0 live elite rs-20260831T031604Z-3c1f1f0f-003. Validation-only freeze. Not a submission replacement. Test sealed.",
+  "origin": "mutation",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/fm_affinity_residual_scorer.py"
+  },
+  "parameters": {
+    "k": 16,
+    "lr": 0.001,
+    "epochs": 40,
+    "batch": 8192,
+    "patience": 4,
+    "l2": 1e-6,
+    "num_models": 7,
+    "top_k_checkpoints": 2,
+    "alpha": 0.05
+  },
+  "seed": 0,
+  "evaluation_split": "valid",
+  "timeout_seconds": 1800,
+  "allow_test_split": false,
+  "tags": ["p0", "not-submission", "family:train_affinity", "mech:user_author_affinity"],
+  "notes": "Repo copy of live elite 003. On valid the code grid-searches alpha and selected 0.1. Do not run on test."
+}

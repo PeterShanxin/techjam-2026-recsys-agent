@@ -1,0 +1,22 @@
+{
+  "experiment_id": "smoke-pairwise-bpr",
+  "hypothesis": "Capability smoke: train a tiny NumPy BPR model on train-only pairwise samples and score valid rows.",
+  "rationale": "P0-1 capability validation. Not a submission candidate.",
+  "origin": "manual",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/pairwise_bpr_scorer.py"
+  },
+  "parameters": {
+    "k": 8,
+    "lr": 0.05,
+    "epochs": 1,
+    "max_pairs": 30000,
+    "negatives_per_positive": 1
+  },
+  "seed": 0,
+  "evaluation_split": "valid",
+  "timeout_seconds": 900,
+  "allow_test_split": false,
+  "tags": ["p0", "smoke", "family:pairwise_ranking", "mech:bpr", "axis:objective"],
+  "notes": "Capability smoke. Train pairwise samples only. Test sealed."
+}

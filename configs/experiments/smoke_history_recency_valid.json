@@ -1,0 +1,20 @@
+{
+  "experiment_id": "smoke-history-recency",
+  "hypothesis": "Capability smoke: score valid rows from train-only user history with recency decay plus train item long_view rate.",
+  "rationale": "P0-1 capability validation. Not a submission candidate.",
+  "origin": "manual",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/history_recency_scorer.py"
+  },
+  "parameters": {
+    "half_life_days": 3.0,
+    "author_weight": 0.35,
+    "popularity_weight": 0.15
+  },
+  "seed": 0,
+  "evaluation_split": "valid",
+  "timeout_seconds": 600,
+  "allow_test_split": false,
+  "tags": ["p0", "smoke", "family:history_recency", "mech:recency", "axis:history"],
+  "notes": "Capability smoke. Train-derived features only. Test sealed."
+}

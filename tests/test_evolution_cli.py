@@ -126,7 +126,7 @@ def test_sequential_control_uses_independent_runs_dir(tmp_path, monkeypatch):
     assert seen_dirs[1] != seen_dirs[0]
     assert (tmp_path / "sequential_control.json").is_file()
     payload = json.loads((tmp_path / "sequential_control.json").read_text(encoding="utf-8"))
-    assert payload["starting_seeds"] == ["fm-root", "fm-ensemble-3seed"]
+    assert payload["starting_seeds"] == ["fm-ensemble-3seed", "final-swa7-ensemble"]
     assert payload["new_evaluations"] == 3
 
 

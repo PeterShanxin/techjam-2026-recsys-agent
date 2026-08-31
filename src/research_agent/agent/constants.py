@@ -59,3 +59,28 @@ FM_ROOT_PARAMETERS: dict[str, Any] = {
 }
 
 FM_ROOT_ENTRYPOINT = "src/research_agent/recommenders/fm_scorer.py"
+
+FROZEN_VALID_BEST: dict[str, Any] = {
+    "experiment_id": "final-swa7-ensemble",
+    "split": "valid",
+    "GAUC": 0.6683660080655603,
+    "nDCG@5": 0.5362712572148608,
+    "primary": 0.6023186326402106,
+    "mechanism": "7-seed official FM + top-2 checkpoint SWA + raw probability mean",
+    "note": "Beat this on validation. Test is sealed.",
+}
+
+KNOWN_NEGATIVE_EVIDENCE: list[str] = [
+    "soft-label claims without reading raw CSVs or lab train-aux APIs are invalid, not negative science",
+    "silent torch/ImportError fallback to FM is a no-op, not a method result",
+    "homogeneous FM bagging/SWA refinements produced only +0.00085 vs FM root",
+    "P0: BPR-FM 7-seed and 3-seed timed out at 600s — implementation_failure, not negative science",
+    "P0: dual user-author + user-tab residual (0.60213) did not beat user-author residual (0.60233)",
+    "P0: recency-decayed user-author affinity (0.60197) lost to static train affinity",
+    "P0: treating FM outputs as probabilities then taking logit/sigmoid destroyed ranking (impl bug)",
+]
+
+TEST_SEALED_POLICY = (
+    "TEST IS SEALED. Do not evaluate, inspect, or select on test. "
+    "Use train + valid only. Official fitness is validation primary."
+)

@@ -13,10 +13,13 @@ from research_agent.llm.secrets import sanitize
 from .accounting import ResourceLedger
 from .constants import (
     BENCHMARK_INVARIANTS,
+    FROZEN_VALID_BEST,
     FM_ROOT_ID,
     FM_VALID_REFERENCE,
+    KNOWN_NEGATIVE_EVIDENCE,
     ORGANIZER_DEAD_ENDS,
     ORGANIZER_PROMISING_CATEGORIES,
+    TEST_SEALED_POLICY,
 )
 from .data_contract import DataContract, discover_data_contract
 from .environment import EnvironmentCapabilities, discover_environment
@@ -74,6 +77,9 @@ class ResearchState:
                 "llm_usage": dict(self.llm_usage),
                 "organizer_dead_ends": list(self.organizer_dead_ends),
                 "promising_categories": list(self.promising_categories),
+                "frozen_valid_best": dict(FROZEN_VALID_BEST),
+                "known_negative_evidence": list(KNOWN_NEGATIVE_EVIDENCE),
+                "test_policy": TEST_SEALED_POLICY,
                 "environment": self.environment.to_dict(),
                 "data_contract": self.data_contract.to_dict(),
                 "operator": self.operator,
@@ -85,10 +91,14 @@ class ResearchState:
                 "guidance": (
                     "These organizer notes are research context, not a script. "
                     "Decide the next experiment from evidence. "
-                    "Stay inside environment.allowed_third_party and the Python standard library. "
+                    "Current weakness is homogeneous FM refinement. Prefer a genuinely different "
+                    "mechanism when evidence supports it. Do not jitter lr/seeds/averaging without a reason. "
+                    "Stay inside environment.allowed_third_party, the Python standard library, "
+                    "and research_agent.lab. "
                     "If the method cannot run, fail explicitly; never silently substitute FM or the parent. "
-                    "Honor data_contract: mechanisms that need is_like or play_time_ms must read raw CSVs; "
-                    "data.load tuples do not include those fields. "
+                    "Honor data_contract: train-derived facts from train only; TEST IS SEALED; "
+                    "is_like / play_time_ms need raw CSVs or lab train-aux/history APIs. "
+                    "Lab helpers are instruments, not the answer. "
                     "Return one complete candidate Python file. Do not modify evaluate.py. "
                     "Write ordered scores for the requested split only."
                 ),

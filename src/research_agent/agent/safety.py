@@ -83,7 +83,12 @@ def assert_allowed_imports(tree: ast.AST, environment: EnvironmentCapabilities) 
 def is_allowed_import(name: str, environment: EnvironmentCapabilities) -> bool:
     if not name:
         return True
-    if name in environment.starter_modules or name in environment.allowed_third_party:
+    project = getattr(environment, "project_modules", ())
+    if (
+        name in environment.starter_modules
+        or name in environment.allowed_third_party
+        or name in project
+    ):
         return True
     return _is_stdlib(name)
 

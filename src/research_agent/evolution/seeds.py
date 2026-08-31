@@ -1,18 +1,22 @@
-"""Reproducible Phase 4 seed: verified 3-seed FM bagging winner."""
+"""Validated starting priors. Configurable ExperimentSpecs, not one-off winners."""
 from __future__ import annotations
 
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Iterable
 
 from research_agent.agent.constants import FM_ROOT_ID, FM_ROOT_PARAMETERS
 from research_agent.agent.root import UnusableRootError, is_usable_root_result
 from research_agent.experiments import ExperimentSpec, ImplementationRef
+from research_agent.final_candidate import FINAL_EXPERIMENT_ID, final_candidate_spec
+
+from .config import DEFAULT_STARTING_PRIOR_IDS
 
 ENSEMBLE_SEED_ID = "fm-ensemble-3seed"
 ENSEMBLE_ENTRYPOINT = "src/research_agent/recommenders/fm_ensemble_scorer.py"
 ENSEMBLE_REFERENCE_PRIMARY = 0.6021
-MATCHED_STARTING_SEED_IDS = (FM_ROOT_ID, ENSEMBLE_SEED_ID)
+FINAL_PRIOR_ID = FINAL_EXPERIMENT_ID
+MATCHED_STARTING_SEED_IDS = (FM_ROOT_ID, *DEFAULT_STARTING_PRIOR_IDS)
 
 
 def ensemble_seed_spec(
@@ -48,6 +52,36 @@ def ensemble_seed_spec(
     )
 
 
+def final_swa7_prior_spec(
+    *,
+    experiment_id: str = FINAL_PRIOR_ID,
+    timeout_seconds: float = 1800.0,
+    seed: int = 0,
+) -> ExperimentSpec:
+    spec = final_candidate_spec(
+        experiment_id=experiment_id,
+        evaluation_split="valid",
+        allow_test_split=False,
+        timeout_seconds=timeout_seconds,
+        seed=seed,
+    )
+    return spec
+
+
+def prior_spec_for(prior_id: str, **kwargs: Any) -> ExperimentSpec:
+    if prior_id == ENSEMBLE_SEED_ID:
+        return ensemble_seed_spec(**kwargs)
+    if prior_id == FINAL_PRIOR_ID:
+        allowed = {key: kwargs[key] for key in ("experiment_id", "timeout_seconds", "seed") if key in kwargs}
+        return final_swa7_prior_spec(**allowed)
+    raise KeyError(f"unknown starting prior id: {prior_id}")
+
+
+def resolve_prior_specs(prior_ids: Iterable[str] | None = None) -> list[ExperimentSpec]:
+    ids = tuple(DEFAULT_STARTING_PRIOR_IDS if prior_ids is None else prior_ids)
+    return [prior_spec_for(item) for item in ids]
+
+
 def ensure_prior_spec(runner: Any, spec: ExperimentSpec) -> Any:
     """Run a prior seed if missing. Does not consume sequential iteration budget.
 
@@ -68,11 +102,17 @@ def ensure_prior_spec(runner: Any, spec: ExperimentSpec) -> Any:
     return SimpleNamespace(spec=spec_used, result=result)
 
 
-def ensure_matched_starting_seeds(agent: Any, *, ensemble_spec: ExperimentSpec | None = None) -> tuple[Any, Any]:
-    """Give sequential search the same Generation-0 priors as evolution: FM root + ensemble.
+def ensure_matched_starting_seeds(
+    agent: Any,
+    *,
+    ensemble_spec: ExperimentSpec | None = None,
+    prior_specs: Iterable[ExperimentSpec] | None = None,
+) -> tuple[Any, ...]:
+    """Give sequential search the same Generation-0 priors as evolution.
 
     Priors are not new evaluations. Their wall time is folded into ``agent.run()``
     via ``_prior_wall_seconds`` so matched ``--wall-clock`` budgets stay fair.
+    Passing ``ensemble_spec`` keeps the old one-extra-prior test hook.
     """
     started = time.perf_counter()
     root = agent.ensure_root()
@@ -80,14 +120,22 @@ def ensure_matched_starting_seeds(agent: Any, *, ensemble_spec: ExperimentSpec |
         raise UnusableRootError(
             f"research root {root.experiment_id} is not a successful validation result"
         )
-    spec = ensemble_spec or ensemble_seed_spec(parent_id=root.experiment_id)
-    existing = agent.runner.registry.peek(spec.experiment_id)
-    reused = existing is not None and existing.result is not None
-    seed = ensure_prior_spec(agent.runner, spec)
-    if seed.result is None:
-        raise RuntimeError(f"prior {spec.experiment_id} has no result")
-    if not reused:
-        agent.ledger.add_experiment(status=seed.result.status, wall_seconds=seed.result.wall_seconds)
+    if prior_specs is not None:
+        specs = list(prior_specs)
+    elif ensemble_spec is not None:
+        specs = [ensemble_spec]
+    else:
+        specs = resolve_prior_specs()
+    seeds = []
+    for spec in specs:
+        existing = agent.runner.registry.peek(spec.experiment_id)
+        reused = existing is not None and existing.result is not None
+        seed = ensure_prior_spec(agent.runner, spec)
+        if seed.result is None:
+            raise RuntimeError(f"prior {spec.experiment_id} has no result")
+        if not reused:
+            agent.ledger.add_experiment(status=seed.result.status, wall_seconds=seed.result.wall_seconds)
+        seeds.append(seed)
     prior = float(getattr(agent, "_prior_wall_seconds", 0.0) or 0.0)
     agent._prior_wall_seconds = prior + (time.perf_counter() - started)
-    return root, seed
+    return (root, *seeds)

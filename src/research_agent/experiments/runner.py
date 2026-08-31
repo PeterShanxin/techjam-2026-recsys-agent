@@ -46,7 +46,7 @@ from .candidate_env import build_candidate_env
 from .canonical import canonical_json
 from .errors import ExperimentIdCollision, ForbiddenTestSplit, SpecError
 from .fingerprint import config_fingerprint, environment_metadata, source_fingerprint
-from .integrity import ProtectedManifest, build_manifest, diff_manifests
+from .integrity import ProtectedManifest, build_manifest, diff_manifests, merge_manifests
 from .registry import ExperimentRegistry, RegistryEntry
 from .result import ExperimentResult, FailureInfo, Metrics
 from .spec import ExperimentSpec
@@ -70,11 +70,13 @@ class ExperimentRunner:
         python_executable: str | None = None,
         protected_paths: list[Path] | None = None,
     ) -> None:
-        self.repo_root = Path(repo_root) if repo_root else REPO_ROOT
-        self.runs_dir = Path(runs_dir) if runs_dir else self.repo_root / "runs"
+        # Resolved up front: the candidate subprocess runs with its own cwd,
+        # so a relative path here would resolve against the wrong directory.
+        self.repo_root = (Path(repo_root) if repo_root else REPO_ROOT).resolve()
+        self.runs_dir = (Path(runs_dir) if runs_dir else self.repo_root / "runs").resolve()
         self.allow_test = allow_test
         self.python_executable = python_executable or sys.executable
-        self.data_dir = Path(data_dir) if data_dir else _default_data_dir()
+        self.data_dir = (Path(data_dir) if data_dir else _default_data_dir()).resolve()
         registry_path = self.runs_dir / "registry.sqlite"
         self.registry = registry if registry is not None else ExperimentRegistry(registry_path)
         # Score-critical assets: always hashed in full, every attempt.
@@ -93,8 +95,16 @@ class ExperimentRunner:
         Includes the dataset: mutated labels would change the metric just as
         surely as a mutated evaluator. Hashed in full each attempt rather than
         keyed on size and mtime, both of which a candidate can set.
+
+        Starter bytecode is hashed too. This process already bound `evaluate`
+        and `data`, so a planted .pyc cannot steer *this* run -- but one whose
+        header matches the real source would be loaded by the next parent
+        process, and nothing else would notice.
         """
-        return build_manifest([*self.protected_paths, self.data_dir])
+        return merge_manifests(
+            build_manifest([*self.protected_paths, self.data_dir]),
+            build_manifest([STARTER, self.repo_root / "starter"], include_bytecode=True),
+        )
 
     def _baseline_manifest(self) -> ProtectedManifest:
         """The one snapshot, taken before the first attempt of this session.
@@ -167,6 +177,13 @@ class ExperimentRunner:
             # Must succeed before the subprocess starts: after that, a lazy
             # resolve could pick up a source or bytecode file left behind.
             _bind_official_modules(strict=True)
+            # Read the labels now, while the tree is known-good. subprocess.run
+            # waits only on the direct child, so a detached grandchild could
+            # rewrite the dataset between the post-run hash and a later read;
+            # scoring from this in-memory copy removes that window entirely.
+            splits = official_load(self.data_dir)
+            if registered.evaluation_split not in splits:
+                raise SpecError(f"unknown evaluation split: {registered.evaluation_split}")
             entrypoint = self._resolve_entrypoint(registered)
             if not entrypoint.is_file():
                 raise SpecError(f"entrypoint not found: {entrypoint}")
@@ -239,6 +256,8 @@ class ExperimentRunner:
                 env=env,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=float(registered.timeout_seconds),
                 check=False,
             )
@@ -330,7 +349,6 @@ class ExperimentRunner:
             )
 
         try:
-            splits = official_load(self.data_dir)
             rows = splits[registered.evaluation_split]
             expected = len(rows)
             check = _validate_scores(loaded, expected)

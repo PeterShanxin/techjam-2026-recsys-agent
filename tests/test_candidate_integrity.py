@@ -289,8 +289,16 @@ def test_default_protected_set_covers_the_assets_that_decide_scores(tmp_path):
         assert any(path.endswith(f"/kuairand/{name}") for path in tracked)
     assert any(path.endswith("/research_agent/evaluation/official.py") for path in tracked)
     assert any(path.endswith("/research_agent/experiments/runner.py") for path in tracked)
-    # Build products must not create phantom integrity failures.
-    assert not any("__pycache__" in path or path.endswith(".pyc") for path in tracked)
+
+    # Starter bytecode IS tracked: a planted .pyc whose header matches the real
+    # source would be loaded by the next parent process even though this one
+    # already bound the good module.
+    assert any("/kuairand/__pycache__/" in path for path in tracked), (
+        "starter bytecode must be covered; bind evaluate/data before the baseline"
+    )
+    # Bytecode under src/ is not, because this process writes it as it imports
+    # its own modules mid-session and would trip on itself.
+    assert not any("/research_agent/" in path and "__pycache__" in path for path in tracked)
 
 
 def test_manifest_detects_modified_removed_and_added_files(tmp_path):
@@ -412,3 +420,104 @@ def test_advisory_lint_is_not_relied_on_as_containment():
 
     evasive = 'open("starter/kuairand/" + "eval" + "uate.py", "w").write("x")\n'
     assert_no_evaluator_tampering(evasive)  # advisory only: does not raise
+
+
+# --------------------------------------------------------------------------
+# Round-1 review findings on this PR
+# --------------------------------------------------------------------------
+
+
+def test_labels_are_read_before_the_candidate_runs(harness, monkeypatch):
+    """Closes the post-hash / pre-load window.
+
+    subprocess.run waits only on the direct child, so a detached grandchild
+    could leave the tree clean for the hash, rewrite labels before the parent
+    read them, and restore the bytes afterwards. Scoring from a copy taken
+    before the candidate started removes the window rather than narrowing it.
+    """
+    import research_agent.experiments.runner as runner_mod
+
+    runner, _, _ = harness
+    order = []
+    real_load = runner_mod.official_load
+    real_run = runner_mod.subprocess.run
+
+    def spy_load(data_dir):
+        order.append("load")
+        return real_load(data_dir)
+
+    def spy_run(*args, **kwargs):
+        order.append("subprocess")
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(runner_mod, "official_load", spy_load)
+    monkeypatch.setattr(runner_mod.subprocess, "run", spy_run)
+
+    result = run_candidate(harness, "pass", experiment_id="load-order")
+    assert result.status == "success"
+    assert order.index("load") < order.index("subprocess"), (
+        f"labels were read after the candidate ran: {order}"
+    )
+    assert order.count("load") == 1, "dataset re-read from disk after the candidate ran"
+
+
+def test_starter_bytecode_is_covered_by_the_manifest(tmp_path):
+    """A planted .pyc steers the *next* parent process, not this one."""
+    starter_like = tmp_path / "starter"
+    pycache = starter_like / "kuairand" / "__pycache__"
+    pycache.mkdir(parents=True)
+    (starter_like / "kuairand" / "evaluate.py").write_text("x = 1\n", encoding="utf-8")
+    (pycache / "evaluate.cpython-314.pyc").write_bytes(b"\x00" * 32)
+
+    tracked = build_manifest([starter_like], include_bytecode=True).digests
+    assert any(path.endswith("evaluate.cpython-314.pyc") for path in tracked)
+
+    # Same walk with bytecode excluded is what src/ uses.
+    assert not any(
+        path.endswith(".pyc") for path in build_manifest([starter_like]).digests
+    )
+
+
+def test_runner_resolves_relative_paths(tmp_path, monkeypatch):
+    """The candidate starts in its own work dir, so inputs must be absolute."""
+    write_mini_dataset(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    runner = ExperimentRunner(repo_root=".", runs_dir="runs", data_dir="data")
+    assert runner.data_dir.is_absolute()
+    assert runner.runs_dir.is_absolute()
+    assert runner.repo_root.is_absolute()
+    assert runner.data_dir == (tmp_path / "data").resolve()
+
+
+def test_non_utf8_candidate_output_does_not_crash_the_runner(harness):
+    """The child is forced to UTF-8, so the parent must decode as UTF-8 too."""
+    runner, _, _ = harness
+    body = """
+    import sys as _s
+    _s.stdout.write("mu=\\u00b5 alpha=\\u03b1" + chr(10))
+    _s.stderr.write("stderr \\u00e9\\u00e8" + chr(10))
+    """
+    result = run_candidate(harness, body, experiment_id="unicode-out")
+    assert result.status == "success"
+    assert result.metrics is not None
+    captured = Path(result.stdout_path).read_text(encoding="utf-8")
+    assert "mu=\u00b5" in captured
+
+
+def test_unreadable_protected_path_fails_the_run_instead_of_crashing(harness, monkeypatch):
+    """An OSError while walking must invalidate, not raise out of run()."""
+    import research_agent.experiments.integrity as integrity_mod
+
+    runner, _, protected = harness
+    runner._baseline_manifest()  # take a clean baseline first
+
+    def exploding_rglob(self, pattern):
+        raise PermissionError("simulated: unreadable directory")
+
+    monkeypatch.setattr(Path, "rglob", exploding_rglob)
+    manifest = integrity_mod.build_manifest([protected])
+    assert manifest.digests, "walk failure must still produce a manifest entry"
+
+    result = run_candidate(harness, "pass", experiment_id="walk-error")
+    assert result.status == "invalid"
+    assert result.failure.kind == "integrity"

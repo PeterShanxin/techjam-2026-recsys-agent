@@ -14,9 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-# Build products the parent process legitimately creates while importing the
-# starter modules. Excluded so they cannot raise a false integrity alarm.
-IGNORED_DIR_NAMES = frozenset({"__pycache__", ".git", ".pytest_cache", ".mypy_cache"})
+IGNORED_DIR_NAMES = frozenset({".git", ".pytest_cache", ".mypy_cache"})
+# Bytecode the parent legitimately creates as it imports its own modules
+# during a session. Skipped by default so it cannot raise a false alarm, but
+# see ``include_bytecode``: for the starter tree it is hashed, because a
+# planted .pyc whose header matches the real source would be picked up by the
+# *next* parent process even though this one already bound the good module.
+BYTECODE_DIR_NAMES = frozenset({"__pycache__"})
 IGNORED_SUFFIXES = frozenset({".pyc", ".pyo", ".pyd~"})
 
 _CHUNK = 1 << 20
@@ -46,7 +50,9 @@ def sha256_path(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _iter_protected_files(roots: Iterable[Path]) -> Iterable[Path]:
+def _iter_protected_files(
+    roots: Iterable[Path], include_bytecode: bool = False
+) -> Iterable[Path]:
     seen: set[Path] = set()
     for raw in roots:
         root = Path(raw)
@@ -58,12 +64,26 @@ def _iter_protected_files(roots: Iterable[Path]) -> Iterable[Path]:
                 seen.add(resolved)
                 yield resolved
             continue
-        for path in sorted(resolved.rglob("*")):
+        try:
+            children = sorted(resolved.rglob("*"))
+        except OSError:
+            # An unwalkable root is itself a change worth surfacing, not a
+            # reason to crash the run that was about to be validated.
+            yield resolved
+            continue
+        for path in children:
             if any(part in IGNORED_DIR_NAMES for part in path.parts):
                 continue
-            if path.suffix in IGNORED_SUFFIXES:
+            is_bytecode = (
+                path.suffix in IGNORED_SUFFIXES
+                or any(part in BYTECODE_DIR_NAMES for part in path.parts)
+            )
+            if is_bytecode and not include_bytecode:
                 continue
-            if not path.is_file():
+            try:
+                if not path.is_file():
+                    continue
+            except OSError:
                 continue
             if path in seen:
                 continue
@@ -71,19 +91,32 @@ def _iter_protected_files(roots: Iterable[Path]) -> Iterable[Path]:
             yield path
 
 
-def build_manifest(roots: Iterable[Path]) -> ProtectedManifest:
+def build_manifest(
+    roots: Iterable[Path], *, include_bytecode: bool = False
+) -> ProtectedManifest:
     """Hash every file under ``roots`` in full. Missing roots contribute nothing.
 
     Overlapping roots are fine: files are de-duplicated by resolved path, so
     the dataset living inside ``starter/`` is hashed once, not twice.
+
+    Never raises for an unreadable path. The caller is usually deciding
+    whether to invalidate a run, and an exception there would crash the run
+    instead of failing it, so problems are recorded as digest values.
     """
     digests: dict[str, str] = {}
-    for path in _iter_protected_files(roots):
+    for path in _iter_protected_files(roots, include_bytecode):
         key = path.as_posix()
         try:
             digests[key] = sha256_path(path)
         except OSError as exc:  # unreadable file is itself a change worth surfacing
             digests[key] = f"unreadable:{exc.__class__.__name__}"
+    return ProtectedManifest(digests=digests)
+
+
+def merge_manifests(*manifests: ProtectedManifest) -> ProtectedManifest:
+    digests: dict[str, str] = {}
+    for manifest in manifests:
+        digests.update(manifest.digests)
     return ProtectedManifest(digests=digests)
 
 

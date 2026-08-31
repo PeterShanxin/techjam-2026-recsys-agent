@@ -1,4 +1,19 @@
-"""Generated-code checks. Controlled research workspace, not a security sandbox."""
+"""Advisory checks on generated candidate source. Not a security boundary.
+
+These are lint. They give the proposer fast, readable feedback (missing CLI
+flags, unsupported imports, silent dependency fallbacks) before an experiment
+is spent running, and they catch honest mistakes.
+
+They are trivially evaded on purpose-built input -- string concatenation,
+``getattr`` indirection, or ``exec`` of a computed string defeats any of them --
+so nothing downstream may treat them as containment. Generated code runs as
+ordinary Python with this process's privileges.
+
+The enforced property lives elsewhere: ``experiments.integrity`` hashes the
+evaluator, starter, source and reference assets in the parent process before
+and after every attempt, and invalidates any attempt whose protected assets
+drifted. That check does not care how a mutation happened.
+"""
 from __future__ import annotations
 
 import ast
@@ -54,6 +69,12 @@ def assert_workspace_path(dest: Path, workspace_root: Path) -> None:
 
 
 def assert_no_evaluator_tampering(source: str, tree: ast.AST | None = None) -> None:
+    """Flag obvious evaluator writes early. Advisory only, never containment.
+
+    Defeated by ``"eval" + "uate.py"``. The enforced check is the parent-side
+    integrity manifest, which hashes the evaluator before and after every
+    attempt regardless of what the source looked like.
+    """
     tree = tree or syntax_check(source)
     if _writes_forbidden_path(tree, source):
         raise SafetyError("candidate appears to modify starter/kuairand/evaluate.py")
@@ -229,5 +250,3 @@ def _is_stdlib(name: str) -> bool:
     except ValueError:
         return False
     return "site-packages" not in path.parts and "dist-packages" not in path.parts
-
-

@@ -142,6 +142,35 @@ Official test CSV **after** freeze only:
 
 Do not use test scores to select experiments. `submission.csv` is gitignored.
 
+## Generated code: threat model
+
+**Generated candidate code is not isolated from the host.** It runs as ordinary
+Python in a subprocess with the same privileges as the agent, and it can read
+and write anything that user can. Real isolation of arbitrary generated code
+requires an OS-level boundary — a separate low-privilege user, a container, or
+seccomp — which this project does not have. That is tracked as follow-up work,
+not something claimed here.
+
+What *is* enforced is narrower, and it is the property the research result
+depends on: **a candidate cannot quietly change the answer, and it is not given
+the agent's credentials.**
+
+| Control | Guarantee |
+| --- | --- |
+| Integrity manifest | The evaluator, starter, `src/research_agent`, and dataset assets are SHA-256 hashed in the parent process before and after every attempt, against a baseline taken once per session and never re-derived. Any added, removed, or modified file fails the attempt as `status="invalid"` with `failure.kind="integrity"`, checked *before* the scores are read — so a tampered run never reaches the evaluator and never publishes a metric. A violation latches: the tree stays failed until a human restores it, so a mutation that survives one run cannot become the next run's accepted baseline. Every result records `protected_manifest_sha256`. |
+| Early evaluator binding | The official `evaluate` and `data` modules are imported before any candidate runs, and binding failure invalidates the attempt rather than deferring. Once resolved in `sys.modules` they cannot be re-resolved, so a replaced source file or planted bytecode cannot steer scoring. |
+| Environment allowlist | The candidate subprocess environment is built from `{}` and receives only allowlisted names (`PATH`, locale, CPU/thread pins, Windows `SystemRoot`). No Gemini/OpenAI/Anthropic/GitHub/cloud credential is passed to generated code. Thread pins are forwarded deliberately: they change float reduction order and therefore reproducibility. |
+| Attempt layout | Candidate output goes to `attempts/<id>/out/`, its working directory and temp files to `work/` and `tmp/`. `metadata.json` and `result.json` are written only by the parent, so provenance is not interleaved with candidate output. |
+
+This is detection and result invalidation, not containment. It holds because
+the checks run in the parent process, outside the candidate — not because the
+candidate is prevented from acting.
+
+The AST checks in `agent/safety.py` are **advisory lint**, not a boundary. They
+give the proposer fast feedback and catch honest mistakes; a split string walks
+straight past them, which `test_advisory_lint_is_not_relied_on_as_containment`
+pins deliberately so the checks are not re-promoted to a security control.
+
 ## Limitations
 
 - Matched pilot is six new evaluations, not 50.

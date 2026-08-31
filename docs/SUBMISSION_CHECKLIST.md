@@ -79,8 +79,8 @@ Canonical numbers: [`docs/evidence/canonical_benchmark.json`](evidence/canonical
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Phase 4 merged to `main` | BLOCKED | GitHub `main` is still Phase 3 (`68357aa`). PR #11 is open. Phase 5 branched from Phase 4 HEAD, not stale main. |
-| Phase 5 PR merged | BLOCKED | PR #14 open. Do not self-merge. |
+| Phase 4 + Phase 5 merged to `main` | READY | PR #11 and PR #12 both merged 2026-08-31. `main` is at Phase 5 (`ace0ca9`). |
+| Post-Phase-5 optimization PR merged | BLOCKED | PR #14 open and up to date with `main`. Cursor Security + Approval pass, approved. Human merges; do not self-merge. |
 | Local valid re-run of frozen candidate | READY | Type A: primary matched the live elite exactly (`0.6029037142533181`). Superseded candidate also still matches exactly (`0.6023186326402106`). |
 | Paired-bootstrap evidence recorded | READY | `scripts/paired_bootstrap.py`; four comparisons in `canonical_benchmark.json`. Significance claimed only vs the FM root (P=0.990). |
 

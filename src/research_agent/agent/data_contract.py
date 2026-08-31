@@ -63,8 +63,6 @@ _CONTRACT_RULE = (
 )
 
 _LAB_FIELD_APIS = (
-    "SplitSafeStore",
-    "research_agent.lab",
     "get_user_history",
     "train_aux",
     "train_behavior",
@@ -418,8 +416,21 @@ def _reads_claimed_fields_from_raw_csv(source: str, fields: tuple[str, ...]) -> 
 def _lab_exposes_claimed_fields(source: str, fields: tuple[str, ...]) -> bool:
     if not fields:
         return False
-    if not any(marker in source for marker in _LAB_FIELD_APIS):
-        return False
     if "SplitSafeStore" not in source and "research_agent.lab" not in source:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            called.add(func.attr)
+        elif isinstance(func, ast.Name):
+            called.add(func.id)
+    if not called.intersection(_LAB_FIELD_APIS):
         return False
     return all(_mentions_field(source, name) for name in fields)

@@ -144,6 +144,31 @@ def test_lab_history_api_may_claim_like_column(tmp_path: Path):
     validate_candidate_source(src, dest, root, proposal=proposal, data_contract=discover_data_contract())
 
 
+def test_lab_comment_does_not_unlock_like_column(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = (
+        "from research_agent.lab import SplitSafeStore\n"
+        "# train_aux is_like play_time_ms\n"
+        + CANDIDATE_SOURCE
+    )
+    proposal = make_proposal(
+        hypothesis="Soft labels from is_like via a comment, not a lab call.",
+        expected_mechanism="Mention train_aux and is_like only.",
+        candidate_source=src,
+        required_data_fields=["is_like"],
+    )
+    with pytest.raises((SafetyError, DataContractError), match="unavailable_data_field"):
+        validate_proposal_data_claims(proposal, discover_data_contract())
+    with pytest.raises(SafetyError, match="unavailable_data_field"):
+        validate_candidate_source(
+            src,
+            dest,
+            root,
+            proposal=proposal,
+            data_contract=discover_data_contract(),
+        )
+
+
 def test_lab_import_alone_does_not_unlock_like_column(tmp_path: Path):
     dest, root = _dest(tmp_path)
     src = "from research_agent.lab import SplitSafeStore\n" + CANDIDATE_SOURCE

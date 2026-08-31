@@ -8,8 +8,10 @@ What this module does guarantee is that a candidate cannot quietly *change the
 answer*. The evaluator, starter, source and dataset assets are hashed in this
 parent process before and after every attempt against a baseline taken once
 per session, and any drift invalidates the attempt before its scores are
-read. The official evaluator is bound before the candidate runs, so a later
-source or bytecode change cannot steer scoring. Candidate subprocesses get a
+read. The evaluation rows are read once per session from a just-verified
+tree, so scoring never re-reads labels a surviving process could have
+rewritten. The official evaluator is bound before the candidate runs, so a
+later source or bytecode change cannot steer scoring. Candidate subprocesses get a
 minimal allowlisted environment rather than a copy of this one, so the agent's
 API credentials are not handed to generated code.
 
@@ -95,6 +97,8 @@ class ExperimentRunner:
         )
         self._baseline: ProtectedManifest | None = None
         self._compromised: FailureInfo | None = None
+        # Evaluation rows, read once per session. See _load_splits_once.
+        self._splits: dict | None = None
         _bind_official_modules()
 
     def protected_manifest(self) -> ProtectedManifest:
@@ -125,6 +129,25 @@ class ExperimentRunner:
         if self._baseline is None:
             self._baseline = self.protected_manifest()
         return self._baseline
+
+    def _load_splits_once(self) -> dict:
+        """Read the evaluation rows once per session, then serve from memory.
+
+        Hashing the dataset and reading it are two operations, so on their own
+        they are not an atomic snapshot: a helper outliving an earlier attempt
+        could rewrite the CSVs in between. Loading exactly once removes the
+        window instead of narrowing it. The single read happens during the
+        first attempt, before any candidate in this session has run, so there
+        is no candidate process in existence to race it; every later attempt
+        scores from this copy and never touches the disk.
+
+        Safe because the dataset is a protected asset: if it changes mid
+        session the integrity check invalidates the run rather than expecting
+        the cache to notice.
+        """
+        if self._splits is None:
+            self._splits = official_load(self.data_dir)
+        return self._splits
 
     def _integrity_failure(
         self, before: ProtectedManifest, attempt_id: str
@@ -193,9 +216,7 @@ class ExperimentRunner:
             # Must succeed before the subprocess starts: after that, a lazy
             # resolve could pick up a source or bytecode file left behind.
             _bind_official_modules(strict=True)
-            # Read the labels now, from the tree just verified. Scoring uses
-            # this in-memory copy, so there is no later disk read to race.
-            splits = official_load(self.data_dir)
+            splits = self._load_splits_once()
             if registered.evaluation_split not in splits:
                 raise SpecError(f"unknown evaluation split: {registered.evaluation_split}")
             entrypoint = self._resolve_entrypoint(registered)

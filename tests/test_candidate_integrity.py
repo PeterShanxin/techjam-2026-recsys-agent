@@ -544,3 +544,30 @@ def test_between_attempt_mutation_is_caught_before_labels_are_loaded(harness):
     assert second.metrics is None and second.scores_path is None
     # Caught in pre-flight, so the candidate never even ran.
     assert second.return_code is None
+
+
+def test_labels_are_read_from_disk_exactly_once_per_session(harness, monkeypatch):
+    """Hash-then-load is two operations; loading once removes the window.
+
+    The single read happens during the first attempt, before any candidate in
+    this session has run, so no candidate process exists to race it. Later
+    attempts score from the same in-memory copy and never touch the disk.
+    """
+    import research_agent.experiments.runner as runner_mod
+
+    runner, _, _ = harness
+    loads = []
+    real_load = runner_mod.official_load
+
+    def counting_load(data_dir):
+        loads.append(str(data_dir))
+        return real_load(data_dir)
+
+    monkeypatch.setattr(runner_mod, "official_load", counting_load)
+
+    for index in range(3):
+        result = run_candidate(harness, "pass", experiment_id=f"once-{index}")
+        assert result.status == "success"
+        assert result.metrics is not None
+
+    assert len(loads) == 1, f"dataset read {len(loads)} times; expected exactly one"

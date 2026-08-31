@@ -169,6 +169,60 @@ def test_lab_comment_does_not_unlock_like_column(tmp_path: Path):
         )
 
 
+def test_fake_lab_method_does_not_unlock_like_column(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = (
+        "from research_agent.lab import SplitSafeStore\n"
+        "store = SplitSafeStore('data')\n"
+        "store.train_behavior('is_like')\n"
+        + CANDIDATE_SOURCE
+    )
+    proposal = make_proposal(
+        hypothesis="Soft labels from is_like via a fake train_behavior helper.",
+        expected_mechanism="Local train_behavior call plus lab import.",
+        candidate_source=src,
+        required_data_fields=["is_like"],
+    )
+    with pytest.raises((SafetyError, DataContractError), match="unavailable_data_field"):
+        validate_proposal_data_claims(proposal, discover_data_contract())
+    with pytest.raises(SafetyError, match="unavailable_data_field"):
+        validate_candidate_source(
+            src,
+            dest,
+            root,
+            proposal=proposal,
+            data_contract=discover_data_contract(),
+        )
+
+
+def test_inference_rows_may_claim_hourmin_not_like(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = (
+        "from research_agent.lab import SplitSafeStore\n"
+        "store = SplitSafeStore('data')\n"
+        "rows = store.inference_rows('valid')\n"
+        "hour = rows[0].hourmin\n"
+        "stamp = rows[0].time_ms\n"
+        + CANDIDATE_SOURCE
+    )
+    ok = make_proposal(
+        hypothesis="Use serving-time hourmin and time_ms from inference_rows.",
+        expected_mechanism="Impression context clock, not labels.",
+        candidate_source=src,
+        required_data_fields=["hourmin", "time_ms"],
+    )
+    validate_proposal_data_claims(ok, discover_data_contract())
+    validate_candidate_source(src, dest, root, proposal=ok, data_contract=discover_data_contract())
+    bad = make_proposal(
+        hypothesis="Soft labels from is_like via inference_rows.",
+        expected_mechanism="inference_rows has no like label.",
+        candidate_source=src,
+        required_data_fields=["is_like"],
+    )
+    with pytest.raises((SafetyError, DataContractError), match="unavailable_data_field"):
+        validate_proposal_data_claims(bad, discover_data_contract())
+
+
 def test_lab_import_alone_does_not_unlock_like_column(tmp_path: Path):
     dest, root = _dest(tmp_path)
     src = "from research_agent.lab import SplitSafeStore\n" + CANDIDATE_SOURCE

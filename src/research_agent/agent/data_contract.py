@@ -62,13 +62,9 @@ _CONTRACT_RULE = (
     "Evaluation is within-user ranking with GAUC, nDCG@5, and primary = mean of those two."
 )
 
-_LAB_FIELD_APIS = (
-    "get_user_history",
-    "train_aux",
-    "train_behavior",
-    "raw_train_events",
-    "train_events",
-)
+_LAB_AUX_APIS = ("get_user_history", "train_aux", "train_events")
+_LAB_CONTEXT_APIS = ("inference_rows", "get_user_history", "train_events")
+_LAB_CONTEXT_FIELDS = frozenset(("hourmin", "time_ms"))
 
 
 class DataContractError(ValueError):
@@ -431,6 +427,12 @@ def _lab_exposes_claimed_fields(source: str, fields: tuple[str, ...]) -> bool:
             called.add(func.attr)
         elif isinstance(func, ast.Name):
             called.add(func.id)
-    if not called.intersection(_LAB_FIELD_APIS):
+    aux_fields = tuple(name for name in fields if name not in _LAB_CONTEXT_FIELDS)
+    context_fields = tuple(name for name in fields if name in _LAB_CONTEXT_FIELDS)
+    if aux_fields and not called.intersection(_LAB_AUX_APIS):
+        return False
+    if context_fields and not called.intersection(_LAB_CONTEXT_APIS):
+        return False
+    if not aux_fields and not context_fields:
         return False
     return all(_mentions_field(source, name) for name in fields)

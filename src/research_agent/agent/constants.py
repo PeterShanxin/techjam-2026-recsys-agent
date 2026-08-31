@@ -49,6 +49,80 @@ ORGANIZER_PROMISING_CATEGORIES: list[str] = [
     "temporal / distribution-shift ideas",
 ]
 
+# Axes this project has already spent most of its evaluations on. Repeating them is
+# cheap to propose and has repeatedly returned deltas inside the noise floor.
+HEAVILY_SEARCHED_AXES: list[str] = [
+    "number of bagged FM seeds (3-seed and 7-seed both measured)",
+    "checkpoint averaging / SWA inside a seed",
+    "score-space combination (raw logit mean vs probability mean vs percentile rank)",
+    "additive train-count residuals on top of the elite (user-author affinity, "
+    "user-tab, author quality prior, item popularity), including recency-decayed variants",
+    "embedding dimension k (organizer measured 8/16/32)",
+    "static catalog feature expansion (organizer measured, no material help)",
+]
+
+# Axes the search has NOT meaningfully entered. Listing them is not an instruction to
+# use any particular one, and no value or setting is suggested here.
+UNDEREXPLORED_AXES: list[str] = [
+    "capacity control / regularization strength of the FM fit "
+    "(the current fit's validation primary peaks several epochs before early stop "
+    "while training loss is still falling, which is an overfitting signature)",
+    "the training objective itself: the loss is pointwise BCE on long_view while the "
+    "official metric is within-user ranking; ranking-aligned objectives have never "
+    "completed a run here (every attempt died on runtime, not on evidence)",
+    "which train rows are used and how they are weighted "
+    "(for example rows that carry no within-user ranking information)",
+    "feature encoding and bucketing choices inside the encoder itself",
+    "multi-task or auxiliary supervision from train-only aux columns",
+    "heterogeneous ensembles whose members differ by objective rather than by seed",
+]
+
+# Measured on this validation split. Sets the bar for what counts as a result.
+VALIDATION_NOISE: dict[str, Any] = {
+    "users": 22377,
+    "rows": 124909,
+    "absolute_primary_bootstrap_sd": 0.00216,
+    "paired_delta_bootstrap_sd_typical": 0.0005,
+    "interpretation": (
+        "Resampling validation users gives an absolute primary standard deviation of "
+        "about 0.0022. A paired comparison against a shared baseline is tighter, about "
+        "0.0005. A candidate whose best realistic case is a delta below ~0.0005 is not "
+        "measurable here and is not worth an evaluation slot. Deltas near 1e-5 are noise."
+    ),
+    "official_convergence_epsilon": 0.002,
+}
+
+# Independent second-opinion audit of the P0 sprint. Evidence about what has been ruled
+# out, so evaluation slots are not spent re-deriving it. Not a list of answers.
+AUDIT_FINDINGS: list[str] = [
+    "GAUC and nDCG@5 are both computed strictly inside one user's impression list. Any "
+    "strictly monotone per-user transform of the score vector (global sigmoid, affine "
+    "rescale, per-user z-score, per-user rank) leaves both metrics bitwise unchanged. "
+    "Verified. Do not propose calibration, normalization or rank transforms as mechanisms.",
+    "A per-user constant cannot change within-user order. The FM's first-order user "
+    "weight and global bias contribute nothing to the metric, and user-catalog columns "
+    "are inert unless crossed with something that varies inside the user.",
+    "Additive blends of train-derived count features on top of the frozen elite were "
+    "swept with the blend weight chosen on validation (an optimistic upper bound). Item "
+    "rate, author rate, video-by-tab, author-by-tab, user-author affinity, user-tab, "
+    "duration-bucket rate, item support, user duration preference and video age all "
+    "peaked at weight zero. Tab, tag and hour-of-day peaked below +1.2e-4. This family "
+    "is informationally redundant with the FM and is closed.",
+    "long_view is about 98% a deterministic function of play_time_ms and duration_ms "
+    "with a threshold near 18 seconds. Four duration encodings, including one with an "
+    "explicit 18000 ms knot and one with a short-video indicator, all landed inside "
+    "noise. The duration-bucketing axis is closed.",
+    "Validation impressions per user are sparse: mean 5.58, median 4. 30.3% of users are "
+    "all-negative and 11.9% all-positive, so 42% of nDCG@5 weight cannot be moved by any "
+    "model. Users with 6-20 impressions hold 63.5% of GAUC weight and 65% of the "
+    "realizable nDCG@5 gain. GAUC and nDCG@5 favour the same users; there is no tradeoff.",
+    "Every prior ranking-objective attempt failed on runtime. The pairwise candidates "
+    "built O(pairs) loops over roughly 1.9M sampled pairs per epoch with plain SGD and "
+    "hit the timeout. research_agent.lab.ranking now exposes vectorized within-user "
+    "grouping and a gradient-driven FM so an O(rows) objective is practical. It supplies "
+    "no loss function; choosing the objective is a research decision.",
+]
+
 FM_ROOT_PARAMETERS: dict[str, Any] = {
     "k": 16,
     "lr": 0.001,
@@ -78,6 +152,13 @@ KNOWN_NEGATIVE_EVIDENCE: list[str] = [
     "P0: dual user-author + user-tab residual (0.60213) did not beat user-author residual (0.60233)",
     "P0: recency-decayed user-author affinity (0.60197) lost to static train affinity",
     "P0: treating FM outputs as probabilities then taking logit/sigmoid destroyed ranking (impl bug)",
+    "P0 pattern: 'parent + alpha * residual' with alpha grid-searched on validation and "
+    "alpha=0 inside the grid cannot score below its parent. Five P0 offspring used it. "
+    "The controller now rejects children whose within-user ordering barely differs from a "
+    "parent's, so this shape no longer earns fitness. Propose a mechanism, not a bounded "
+    "reparameterisation of the elite.",
+    "Audit: the whole pipeline's gain over the FM root (+0.00085) does not clear a 95% "
+    "paired user bootstrap (CI [-0.00025, +0.00184]). Treat sub-0.0005 deltas as unproven.",
 ]
 
 TEST_SEALED_POLICY = (

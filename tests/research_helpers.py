@@ -24,6 +24,11 @@ def make_proposal_payload(**overrides) -> dict:
         "abandon_or_continue_reasoning": "continue with sequential search",
         "seed": 0,
         "timeout_seconds": 30.0,
+        # Required since the diversity signature became load-bearing: an empty family
+        # collapses duplicate detection and crossover parent choice to a no-op.
+        "research_family": "harness_plumbing",
+        "mechanism_tags": ["cli_contract"],
+        "changed_axes": ["plumbing"],
     }
     payload.update(overrides)
     return payload

@@ -28,6 +28,11 @@ class EvolutionConfig:
     prefer_crossover_from_generation: int = 2
     max_repairs: int = 2
     experiment_timeout_seconds: float = 900.0
+    # Behavioural no-op gate. A child whose within-user ordering matches a parent's on
+    # all but this share of rows is a reparameterisation, not a hypothesis. Disabled on
+    # splits below near_identity_min_rows, where ordering agreement is coincidence.
+    near_identity_min_rank_change: float = 0.001
+    near_identity_min_rows: int = 1000
 
     def __post_init__(self) -> None:
         if self.population_size < 1:

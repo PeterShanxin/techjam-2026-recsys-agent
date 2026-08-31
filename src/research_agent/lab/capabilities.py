@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 LAB_MODULE = "research_agent.lab"
-LAB_IMPORT = "from research_agent.lab import SplitSafeStore"
+LAB_IMPORT = "from research_agent.lab import SplitSafeStore, GradientFM, user_groups"
 
 LAB_CONTRACT = (
     "SplitSafeStore is a lab instrument, not a recommender. "
@@ -87,7 +87,49 @@ LAB_CAPABILITIES: tuple[dict[str, str], ...] = (
         "provenance": "catalog_unscoped",
         "role": "Optional leaky global counters. Prefer train_popularity.",
     },
+    {
+        "name": "user_groups",
+        "call": "user_groups(users_from_encode) -> UserGroups",
+        "provenance": "structural",
+        "role": (
+            "Vectorized within-user segmentation of an encoded split. Gives .order, "
+            ".group_start, .group_sizes plus .group_sum/.group_max/.broadcast/.select. "
+            "Makes a group-structured objective cost O(rows) instead of O(pairs)."
+        ),
+    },
+    {
+        "name": "GradientFM",
+        "call": "GradientFM(dim, k=..., lr=..., l2=..., seed=...); m.logits(X); m.apply(X, grad_logits)",
+        "provenance": "structural",
+        "role": (
+            "Official FM forward pass plus Adam, driven by a caller-supplied per-row "
+            "dL/dlogit. Contains NO loss function and cannot train on its own. You choose "
+            "the objective, the targets and the regularization. Also has predict/state/load_state."
+        ),
+    },
 )
+
+# One worked example. Shows the plumbing only: the gradient shown is plain pointwise BCE,
+# which just reproduces the existing FM. Whether some other objective is worth training,
+# and what it should be, is the research question this example does not answer.
+LAB_EXAMPLE = """\
+from data import encode, load
+from research_agent.lab import GradientFM, user_groups
+import numpy as np
+
+splits = load(data_dir)
+enc, dim = encode(splits)
+Xtr, ytr, utr = enc["train"]
+groups = user_groups(utr)                # within-user segmentation of the train split
+Xg = Xtr[groups.order]                   # rows reordered so each user is contiguous
+yg = ytr[groups.order]
+
+model = GradientFM(dim, k=16, lr=0.001, l2=1e-6, seed=0)
+rows = groups.select(np.arange(64))      # a whole-user minibatch: 64 users, no user split
+z, _, _ = model.logits(Xg[rows])
+g = (1.0 / (1.0 + np.exp(-z)) - yg[rows]) / len(rows)   # <- pointwise BCE; replace this
+model.apply(Xg[rows], g)
+"""
 
 TRAIN_DERIVED = (
     "user history",
@@ -134,6 +176,7 @@ def lab_contract_dict() -> dict[str, Any]:
         "module": LAB_MODULE,
         "import": LAB_IMPORT,
         "rule": LAB_CONTRACT,
+        "example": LAB_EXAMPLE,
         "capabilities": [dict(item) for item in LAB_CAPABILITIES],
         "train_derived": list(TRAIN_DERIVED),
         "inference_visible": list(INFERENCE_VISIBLE),

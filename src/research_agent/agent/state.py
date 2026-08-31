@@ -12,14 +12,18 @@ from research_agent.llm.secrets import sanitize
 
 from .accounting import ResourceLedger
 from .constants import (
+    AUDIT_FINDINGS,
     BENCHMARK_INVARIANTS,
     FROZEN_VALID_BEST,
     FM_ROOT_ID,
     FM_VALID_REFERENCE,
+    HEAVILY_SEARCHED_AXES,
     KNOWN_NEGATIVE_EVIDENCE,
     ORGANIZER_DEAD_ENDS,
     ORGANIZER_PROMISING_CATEGORIES,
     TEST_SEALED_POLICY,
+    UNDEREXPLORED_AXES,
+    VALIDATION_NOISE,
 )
 from .data_contract import DataContract, discover_data_contract
 from .environment import EnvironmentCapabilities, discover_environment
@@ -77,6 +81,10 @@ class ResearchState:
                 "llm_usage": dict(self.llm_usage),
                 "organizer_dead_ends": list(self.organizer_dead_ends),
                 "promising_categories": list(self.promising_categories),
+                "heavily_searched_axes": list(HEAVILY_SEARCHED_AXES),
+                "underexplored_axes": list(UNDEREXPLORED_AXES),
+                "validation_noise": dict(VALIDATION_NOISE),
+                "audit_findings": list(AUDIT_FINDINGS),
                 "frozen_valid_best": dict(FROZEN_VALID_BEST),
                 "known_negative_evidence": list(KNOWN_NEGATIVE_EVIDENCE),
                 "test_policy": TEST_SEALED_POLICY,
@@ -91,6 +99,13 @@ class ResearchState:
                 "guidance": (
                     "These organizer notes are research context, not a script. "
                     "Decide the next experiment from evidence. "
+                    "heavily_searched_axes are near-exhausted; underexplored_axes are open but "
+                    "carry no suggested settings - you must reason out what to try and why. "
+                    "validation_noise sets the bar: a hypothesis whose best case is below "
+                    "~0.0005 primary is not measurable here, so do not spend an evaluation on it. "
+                    "A child whose within-user ordering barely differs from its parent is rejected "
+                    "as near_identity_noop, so a bounded residual on the elite with a "
+                    "validation-tuned weight is not a valid experiment. "
                     "Current weakness is homogeneous FM refinement. Prefer a genuinely different "
                     "mechanism when evidence supports it. Do not jitter lr/seeds/averaging without a reason. "
                     "Stay inside environment.allowed_third_party, the Python standard library, "

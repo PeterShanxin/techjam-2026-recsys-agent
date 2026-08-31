@@ -26,7 +26,17 @@ Write a COMPLETE replacement Python candidate that:
 Current validated best is final-swa7-ensemble (primary 0.6023186). The current weakness is homogeneous FM refinement.
 Prefer hypotheses that test a genuinely different mechanism when evidence supports it.
 Do not perform meaningless numeric jitter. Do not collapse a generation into more seeds / slightly different LR / slightly different averaging unless there is a strong scientific reason.
-Lab helpers provide facts (history, train popularity, pairwise samples, catalogs). They are not a hidden winning ranker.
+Lab helpers provide facts (history, train popularity, pairwise samples, catalogs) and machinery
+(within-user grouping, a gradient-driven FM with no loss of its own). They are not a hidden winning ranker.
+
+Read ResearchState.heavily_searched_axes, underexplored_axes, validation_noise and audit_findings before choosing.
+Those lists name axes, not settings. No parameter value, blend weight or objective is prescribed anywhere;
+work out what is worth trying and justify it from the evidence.
+Respect the noise floor: a hypothesis whose best realistic outcome is under ~0.0005 validation primary
+cannot be measured on this split and wastes an evaluation slot.
+A child whose within-user ordering is nearly identical to its parent's is rejected as near_identity_noop.
+"parent + alpha * residual" with alpha tuned on validation and alpha=0 available is therefore not a valid
+experiment: it is a reparameterisation of the parent, not a hypothesis.
 
 Prefer one meaningful research mutation versus the parent source.
 Use the selected parent as the code you modify. Prefer the current validation elite over a failed child.

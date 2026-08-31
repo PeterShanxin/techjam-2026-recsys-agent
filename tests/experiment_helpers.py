@@ -7,6 +7,7 @@ from research_agent.experiments import ExperimentSpec, ImplementationRef
 
 CANDIDATE_SOURCE = '''\
 import argparse
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -49,7 +50,12 @@ def main():
         scores[0] = np.inf
         np.save(args.output_scores, scores)
         return 0
-    rng = np.random.default_rng(args.seed)
+    # Derive the stream from seed AND config so a parameter-only mutation actually
+    # produces a different ranking. A fixture that ignored its own parameters would be
+    # a genuine no-op and the controller's near-identity gate would rightly reject it.
+    knobs = sorted((k, repr(v)) for k, v in cfg.items() if k != "action")
+    digest = hashlib.sha256(repr(knobs).encode("utf-8")).hexdigest()[:8]
+    rng = np.random.default_rng([args.seed, int(digest, 16)])
     np.save(args.output_scores, rng.random(n))
     print("ok", n)
     return 0

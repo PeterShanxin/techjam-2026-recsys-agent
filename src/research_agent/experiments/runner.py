@@ -1,6 +1,20 @@
 """Stable experiment runner.
 
-Filesystem isolation + subprocess + timeout. Not a security sandbox.
+Subprocess + timeout + result integrity. **Not a security sandbox**: generated
+candidate code runs as ordinary Python with the privileges of this process,
+and nothing here confines what it can read or write on the host.
+
+What this module does guarantee is that a candidate cannot quietly *change the
+answer*. The evaluator, starter, source and dataset assets are hashed in this
+parent process before and after every attempt against a baseline taken once
+per session, and any drift invalidates the attempt before its scores are
+read. The official evaluator is bound before the candidate runs, so a later
+source or bytecode change cannot steer scoring. Candidate subprocesses get a
+minimal allowlisted environment rather than a copy of this one, so the agent's
+API credentials are not handed to generated code.
+
+Real isolation of untrusted code requires an OS-level boundary (separate
+low-privilege user, container, or seccomp) and is tracked as follow-up.
 
 Identity (experiment_id) is immutable once registered. Each execution
 attempt evaluates only score artifacts created by that attempt.
@@ -22,14 +36,17 @@ from research_agent.evaluation.official import (
     EVALUATE_PY,
     REPO_ROOT,
     STARTER,
+    ensure_starter_on_path,
     official_evaluate,
     official_load,
     split_labels,
 )
 
+from .candidate_env import build_candidate_env
 from .canonical import canonical_json
 from .errors import ExperimentIdCollision, ForbiddenTestSplit, SpecError
 from .fingerprint import config_fingerprint, environment_metadata, source_fingerprint
+from .integrity import ProtectedManifest, build_manifest, diff_manifests
 from .registry import ExperimentRegistry, RegistryEntry
 from .result import ExperimentResult, FailureInfo, Metrics
 from .spec import ExperimentSpec
@@ -37,6 +54,8 @@ from .splits import assert_split_allowed
 
 SCORES_NAME = "scores.npy"
 PUBLISHED_EXECUTION = ("scores.npy", "stdout.log", "stderr.log", "metadata.json")
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ExperimentRunner:
@@ -49,6 +68,7 @@ class ExperimentRunner:
         data_dir: Path | None = None,
         allow_test: bool = False,
         python_executable: str | None = None,
+        protected_paths: list[Path] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root) if repo_root else REPO_ROOT
         self.runs_dir = Path(runs_dir) if runs_dir else self.repo_root / "runs"
@@ -57,6 +77,58 @@ class ExperimentRunner:
         self.data_dir = Path(data_dir) if data_dir else _default_data_dir()
         registry_path = self.runs_dir / "registry.sqlite"
         self.registry = registry if registry is not None else ExperimentRegistry(registry_path)
+        # Score-critical assets: always hashed in full, every attempt.
+        self.protected_paths = (
+            [Path(p) for p in protected_paths]
+            if protected_paths is not None
+            else [STARTER, PACKAGE_ROOT, self.repo_root / "starter"]
+        )
+        self._baseline: ProtectedManifest | None = None
+        self._compromised: FailureInfo | None = None
+        _bind_official_modules()
+
+    def protected_manifest(self) -> ProtectedManifest:
+        """SHA-256 of every asset a candidate must not change.
+
+        Includes the dataset: mutated labels would change the metric just as
+        surely as a mutated evaluator. Hashed in full each attempt rather than
+        keyed on size and mtime, both of which a candidate can set.
+        """
+        return build_manifest([*self.protected_paths, self.data_dir])
+
+    def _baseline_manifest(self) -> ProtectedManifest:
+        """The one snapshot, taken before the first attempt of this session.
+
+        Deliberately never refreshed. Re-snapshotting before each attempt would
+        let a mutation that survived one run become the accepted baseline for
+        the next, so a tampered evaluator would score every later experiment
+        without another integrity failure.
+        """
+        if self._baseline is None:
+            self._baseline = self.protected_manifest()
+        return self._baseline
+
+    def _integrity_failure(
+        self, before: ProtectedManifest, attempt_id: str
+    ) -> FailureInfo | None:
+        """Compare protected assets against the session baseline."""
+        if self._compromised is not None:
+            return self._compromised
+        changes = diff_manifests(before, self.protected_manifest())
+        if not changes:
+            return None
+        failure = FailureInfo(
+            "integrity",
+            (
+                "protected evaluator/starter/reference assets changed during this "
+                f"attempt; refusing to score it. changed={sorted(changes)}"
+            ),
+            {"changes": changes, "attempt_id": attempt_id},
+        )
+        # Latched: the tree stays dirty until a human restores it, so every
+        # later attempt in this session fails too instead of re-baselining.
+        self._compromised = failure
+        return failure
 
     def run(self, spec: ExperimentSpec, *, allow_test: bool | None = None) -> ExperimentResult:
         allow = self.allow_test if allow_test is None else allow_test
@@ -87,10 +159,14 @@ class ExperimentRunner:
         _clear_published_execution(run_dir)
 
         started = time.perf_counter()
+        pre_run_manifest = self._baseline_manifest()
         try:
             assert_split_allowed(registered.evaluation_split, allow)
             if not self.data_dir.is_dir():
                 raise SpecError(f"data dir not found: {self.data_dir}")
+            # Must succeed before the subprocess starts: after that, a lazy
+            # resolve could pick up a source or bytecode file left behind.
+            _bind_official_modules(strict=True)
             entrypoint = self._resolve_entrypoint(registered)
             if not entrypoint.is_file():
                 raise SpecError(f"entrypoint not found: {entrypoint}")
@@ -105,6 +181,8 @@ class ExperimentRunner:
                 config_fp=config_fp,
             )
             metadata["attempt_id"] = attempt_id
+            metadata["protected_manifest_sha256"] = pre_run_manifest.digest
+            metadata["protected_asset_count"] = len(pre_run_manifest)
             (attempt_dir / "metadata.json").write_text(
                 canonical_json(metadata) + "\n", encoding="utf-8"
             )
@@ -125,9 +203,18 @@ class ExperimentRunner:
                 entrypoint=self._resolve_entrypoint(registered),
             )
 
-        scores_path = attempt_dir / SCORES_NAME
         stdout_path = attempt_dir / "stdout.log"
         stderr_path = attempt_dir / "stderr.log"
+        # Candidate artifacts live under out/, its working directory and temp
+        # files under work/ and tmp/. metadata.json and result.json stay
+        # directly in the attempt directory, written only by this process, so
+        # provenance is not interleaved with candidate output.
+        out_dir = attempt_dir / "out"
+        work_dir = attempt_dir / "work"
+        temp_dir = attempt_dir / "tmp"
+        for path in (out_dir, work_dir, temp_dir):
+            path.mkdir(parents=True, exist_ok=True)
+        scores_path = out_dir / SCORES_NAME
         command = [
             self.python_executable,
             str(entrypoint),
@@ -142,20 +229,13 @@ class ExperimentRunner:
             "--config",
             str(config_path),
         ]
-        env = os.environ.copy()
-        pythonpath = [
-            str(self.repo_root / "src"),
-            str(STARTER),
-        ]
-        existing_pythonpath = env.get("PYTHONPATH")
-        if existing_pythonpath:
-            pythonpath.append(existing_pythonpath)
-        env["PYTHONPATH"] = os.pathsep.join(pythonpath)
+        pythonpath = os.pathsep.join([str(self.repo_root / "src"), str(STARTER)])
+        env = build_candidate_env(pythonpath=pythonpath, temp_dir=str(temp_dir))
 
         try:
             completed = subprocess.run(
                 command,
-                cwd=str(self.repo_root),
+                cwd=str(work_dir),
                 env=env,
                 capture_output=True,
                 text=True,
@@ -165,22 +245,23 @@ class ExperimentRunner:
         except subprocess.TimeoutExpired as exc:
             _write_text(stdout_path, exc.stdout)
             _write_text(stderr_path, exc.stderr)
+            timeout_failure = self._integrity_failure(pre_run_manifest, attempt_id) or FailureInfo(
+                "timeout",
+                f"candidate exceeded timeout_seconds={registered.timeout_seconds}",
+                {"command": command, "attempt_id": attempt_id},
+            )
             return self._finish(
                 registered,
                 run_dir,
                 attempt_dir,
-                status="timeout",
+                status="invalid" if timeout_failure.kind == "integrity" else "timeout",
                 wall=time.perf_counter() - started,
                 return_code=None,
                 attempt_scores=None,
                 metrics=None,
                 source_fp=source_fp,
                 config_fp=config_fp,
-                failure=FailureInfo(
-                    "timeout",
-                    f"candidate exceeded timeout_seconds={registered.timeout_seconds}",
-                    {"command": command, "attempt_id": attempt_id},
-                ),
+                failure=timeout_failure,
                 entrypoint=entrypoint,
                 environment=metadata,
             )
@@ -188,6 +269,26 @@ class ExperimentRunner:
         _write_text(stdout_path, completed.stdout)
         _write_text(stderr_path, completed.stderr)
         wall = time.perf_counter() - started
+
+        # Checked before the scores are read, so a run that changed a
+        # protected asset can never reach the evaluator or publish a metric.
+        integrity_failure = self._integrity_failure(pre_run_manifest, attempt_id)
+        if integrity_failure is not None:
+            return self._finish(
+                registered,
+                run_dir,
+                attempt_dir,
+                status="invalid",
+                wall=wall,
+                return_code=completed.returncode,
+                attempt_scores=None,
+                metrics=None,
+                source_fp=source_fp,
+                config_fp=config_fp,
+                failure=integrity_failure,
+                entrypoint=entrypoint,
+                environment=metadata,
+            )
 
         if completed.returncode != 0:
             return self._finish(
@@ -210,7 +311,7 @@ class ExperimentRunner:
                 environment=metadata,
             )
 
-        loaded = self._load_attempt_scores(scores_path, attempt_dir)
+        loaded = self._load_attempt_scores(scores_path, out_dir)
         if isinstance(loaded, FailureInfo):
             return self._finish(
                 registered,
@@ -302,17 +403,17 @@ class ExperimentRunner:
             paths.append(raw if raw.is_absolute() else (self.repo_root / raw).resolve())
         return paths
 
-    def _load_attempt_scores(self, path: Path, attempt_dir: Path) -> np.ndarray | FailureInfo:
+    def _load_attempt_scores(self, path: Path, out_dir: Path) -> np.ndarray | FailureInfo:
         """Load scores only if this attempt created them. Never read published leftovers."""
         if not path.is_file():
             return FailureInfo("missing_scores", f"score artifact not found: {path}")
         try:
             resolved = path.resolve()
-            if resolved.parent != attempt_dir.resolve():
+            if resolved.parent != out_dir.resolve():
                 return FailureInfo(
                     "stale_scores",
-                    "refusing to evaluate scores outside this attempt directory",
-                    {"path": str(resolved), "attempt_dir": str(attempt_dir)},
+                    "refusing to evaluate scores outside this attempt output directory",
+                    {"path": str(resolved), "out_dir": str(out_dir)},
                 )
         except OSError as exc:
             return FailureInfo("invalid_scores", f"could not resolve score path: {exc}")
@@ -414,6 +515,30 @@ class ExperimentRunner:
         return result
 
 
+def _bind_official_modules(*, strict: bool = False) -> None:
+    """Import the official evaluator and loader before any candidate runs.
+
+    Once bound in sys.modules they cannot be re-resolved, so neither a replaced
+    source file nor a planted ``__pycache__/*.pyc`` (which the integrity walk
+    skips, because this process legitimately creates bytecode there) can change
+    how this process scores anything.
+
+    ``strict`` refuses to continue when binding did not happen. Swallowing the
+    failure would leave ``official_evaluate`` to resolve ``evaluate`` lazily
+    after the candidate exits, which is the window this closes.
+    """
+    try:
+        ensure_starter_on_path()
+        import data  # noqa: F401
+        import evaluate  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        if strict:
+            raise SpecError(f"official evaluator/loader could not be bound: {exc}") from exc
+        return
+    if strict and ("evaluate" not in sys.modules or "data" not in sys.modules):
+        raise SpecError("official evaluator/loader did not bind before the candidate ran")
+
+
 def _clear_published_execution(run_dir: Path) -> None:
     for name in PUBLISHED_EXECUTION:
         path = run_dir / name
@@ -434,7 +559,7 @@ def _publish_attempt(
         return
     if not attempt_scores.is_file():
         return
-    if attempt_scores.resolve().parent != attempt_dir.resolve():
+    if attempt_scores.resolve().parent != (attempt_dir / "out").resolve():
         return
     shutil.copy2(attempt_scores, run_dir / SCORES_NAME)
 

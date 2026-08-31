@@ -30,7 +30,10 @@ _ENV_RULE = (
     "and project module research_agent.lab). "
     "If the proposed method cannot execute, fail explicitly. "
     "Do not silently fall back to the FM baseline, the selected parent, or another algorithm "
-    "and emit those scores as evidence for the claimed hypothesis."
+    "and emit those scores as evidence for the claimed hypothesis. "
+    "Write outputs only under the directory of --output-scores; the evaluator, starter and "
+    "dataset files are read-only inputs and are hash-verified after every run, so an experiment "
+    "that modifies them is discarded rather than scored."
 )
 
 

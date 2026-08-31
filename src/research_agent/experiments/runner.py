@@ -128,6 +128,9 @@ class ExperimentRunner:
             assert_split_allowed(registered.evaluation_split, allow)
             if not self.data_dir.is_dir():
                 raise SpecError(f"data dir not found: {self.data_dir}")
+            # Must succeed before the subprocess starts: after that, a lazy
+            # resolve could pick up a source or bytecode file a candidate left.
+            _bind_official_modules(strict=True)
             entrypoint = self._resolve_entrypoint(registered)
             if not entrypoint.is_file():
                 raise SpecError(f"entrypoint not found: {entrypoint}")
@@ -540,21 +543,28 @@ class ExperimentRunner:
         return result
 
 
-def _bind_official_modules() -> None:
+def _bind_official_modules(*, strict: bool = False) -> None:
     """Import the official evaluator and loader before any candidate runs.
 
     Once bound in sys.modules they cannot be re-resolved, so neither a
     replaced source file nor a planted ``__pycache__/*.pyc`` (which the
     integrity walk skips, because the parent legitimately creates bytecode
     there) can change how this process scores anything.
+
+    ``strict`` refuses to continue when binding did not happen. Swallowing the
+    failure would leave ``official_evaluate`` to resolve ``evaluate`` lazily
+    *after* the candidate exits, which is exactly the window this closes.
     """
     try:
-        official_load  # noqa: B018 - module-level import already resolved
         ensure_starter_on_path()
         import data  # noqa: F401
         import evaluate  # noqa: F401
-    except Exception:  # noqa: BLE001 - absent starter surfaces later as SpecError
-        pass
+    except Exception as exc:  # noqa: BLE001
+        if strict:
+            raise SpecError(f"official evaluator/loader could not be bound: {exc}") from exc
+        return
+    if strict and ("evaluate" not in sys.modules or "data" not in sys.modules):
+        raise SpecError("official evaluator/loader did not bind before the candidate ran")
 
 
 def _clear_published_execution(run_dir: Path) -> None:

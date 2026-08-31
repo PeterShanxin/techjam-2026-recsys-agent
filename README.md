@@ -119,7 +119,13 @@ Four properties carry the boundary:
 - **Nothing the hook depends on is reachable from candidate code.** Helpers and
   stdlib callables are captured as closure locals at install time; otherwise
   rebinding `os.path.realpath` or a module-level helper via `sys.modules` makes
-  the hook validate a different path than the kernel acts on.
+  the hook validate a different path than the kernel acts on. `gc.*` and the
+  frame-introspection half of `sys.*` are denied for the same reason: closure
+  cells are writable, so object enumeration or a profile hook would reach them.
+- **The sandbox is writable or importable, never both.** Native code loaded out
+  of a write root runs constructors that write with no Python event at all, so
+  imports are refused when the module file, or any `sys.path` entry, is inside
+  the writable tree.
 - **The integrity baseline is latched.** It is taken once per session and never
   re-derived, so a mutation that survives one run cannot become the next run's
   accepted baseline. Once tripped, every later attempt in that session fails

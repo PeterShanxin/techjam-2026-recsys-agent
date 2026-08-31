@@ -649,3 +649,148 @@ def test_official_evaluator_is_bound_before_any_candidate_runs(tmp_path, monkeyp
     ExperimentRunner(runs_dir=tmp_path / "runs", data_dir=write_mini_dataset(tmp_path))
     assert "evaluate" in sys.modules, "evaluator was not bound at runner construction"
     assert "data" in sys.modules
+
+
+# --------------------------------------------------------------------------
+# Round-2 Cursor findings: closure reachability, native loading, fail-open bind
+# --------------------------------------------------------------------------
+
+REFLECTION_ATTACKS = {
+    # gc.get_objects / get_referrers enumerate live objects, which reaches the
+    # hook function; closure cells are writable, so this would let a candidate
+    # swap the write roots out from under the guard.
+    "gc_reach_hook_closure": """
+    import gc as _gc
+    hooks = [o for o in _gc.get_objects()
+             if getattr(o, "__name__", None) == "hook" and getattr(o, "__closure__", None)]
+    Path(cfg["output_scores"]).with_name("hooks.txt").write_text(str(len(hooks)), encoding="utf-8")
+    for fn in hooks:
+        for cell in fn.__closure__:
+            try:
+                cell.cell_contents = ()
+            except (ValueError, TypeError):
+                pass
+    """,
+    # Frame introspection is the other route to the same cells: on 3.13+
+    # frame.f_locals writes through to the real locals.
+    "frame_reach_hook_closure": """
+    import sys as _s
+    _s.setprofile(lambda *a: None)
+    """,
+    "getframe_walk": """
+    import sys as _s
+    _s._getframe(0)
+    """,
+}
+
+
+@pytest.mark.parametrize("name,attack", sorted(REFLECTION_ATTACKS.items()))
+def test_hook_closure_is_unreachable(sandbox, name, attack):
+    """The guard's captured locals must not be reachable, let alone writable."""
+    runner, _, _ = sandbox
+    result, changes = run_attack(sandbox, attack, experiment_id=f"refl-{name}")
+    assert changes == {}
+    assert_blocked(attack_error(runner, f"refl-{name}"), name)
+
+
+NATIVE_ATTACKS = {
+    # Write a shared library into the sandbox, put the sandbox on sys.path,
+    # import it. Native constructors then run fopen/write with no Python
+    # audit event at all, bypassing every check above.
+    "native_via_syspath": """
+    import sys as _s
+    out = Path(cfg["output_scores"]).parent
+    dst = out / ("evilmod" + cfg["suffix"])
+    with open(cfg["donor"], "rb") as fh:
+        blob = fh.read()
+    with open(dst, "wb") as fh:
+        fh.write(blob)
+    _s.path.insert(0, str(out))
+    import evilmod
+    """,
+    # Same, without sys.path: a direct ExtensionFileLoader. The import event
+    # populates `filename` on this route.
+    "native_via_direct_loader": """
+    import importlib.machinery as _m
+    import importlib.util as _u
+    out = Path(cfg["output_scores"]).parent
+    dst = out / "blob_no_extension"
+    with open(cfg["donor"], "rb") as fh:
+        blob = fh.read()
+    with open(dst, "wb") as fh:
+        fh.write(blob)
+    loader = _m.ExtensionFileLoader("blobmod", str(dst))
+    spec = _u.spec_from_file_location("blobmod", str(dst), loader=loader)
+    _u.module_from_spec(spec)
+    """,
+    "add_dll_directory_on_sandbox": """
+    import os as _o
+    _o.add_dll_directory(str(Path(cfg["output_scores"]).parent))
+    """,
+}
+
+
+def _native_donor():
+    suffix = ".pyd" if os.name == "nt" else ".so"
+    for base in (Path(sys.prefix) / "DLLs", Path(sys.prefix) / "lib-dynload"):
+        if base.is_dir():
+            found = sorted(base.glob(f"*{suffix}"))
+            if found:
+                return str(found[0]), suffix
+    return None, suffix
+
+
+@pytest.mark.parametrize("name,attack", sorted(NATIVE_ATTACKS.items()))
+def test_native_code_cannot_be_loaded_from_the_sandbox(sandbox, name, attack):
+    """The sandbox is writable or importable, never both."""
+    runner, _, _ = sandbox
+    donor, suffix = _native_donor()
+    if donor is None and "native" in name:
+        pytest.skip("no native extension module available to copy")
+    result, changes = run_attack(
+        sandbox, attack, experiment_id=f"nat-{name}",
+        params={"donor": donor or "", "suffix": suffix},
+    )
+    assert changes == {}
+    assert_blocked(attack_error(runner, f"nat-{name}"), name)
+
+
+def test_gc_and_frame_events_are_not_allowlisted():
+    from research_agent.experiments import candidate_guard as guard
+
+    for event in ("gc.get_objects", "gc.get_referrers", "sys._getframe",
+                  "sys._current_frames", "sys.settrace", "sys.setprofile"):
+        assert event not in guard.ALLOWED_EVENTS
+        assert not event.startswith(guard.ALLOWED_PREFIXES), event
+
+
+def test_run_fails_closed_when_the_evaluator_cannot_be_bound(tmp_path, monkeypatch):
+    """Binding must not fail open.
+
+    A swallowed ImportError would leave `official_evaluate` to resolve
+    `evaluate` lazily after the candidate exits -- the exact window that
+    binding early was added to close.
+    """
+    import research_agent.experiments.runner as runner_mod
+
+    data_dir = write_mini_dataset(tmp_path)
+    candidate = build_candidate(tmp_path / "quiet.py", "pass")
+    runner = ExperimentRunner(
+        repo_root=tmp_path, runs_dir=tmp_path / "runs", data_dir=data_dir
+    )
+
+    def refuse(*args, **kwargs):
+        if kwargs.get("strict"):
+            raise runner_mod.SpecError("simulated: starter modules unavailable")
+
+    monkeypatch.setattr(runner_mod, "_bind_official_modules", refuse)
+    result = runner.run(
+        make_spec(
+            experiment_id="bind-fail",
+            implementation=ImplementationRef(entrypoint=str(candidate)),
+            parameters={"n": 1},
+        )
+    )
+    assert result.status == "invalid"
+    assert result.metrics is None
+    assert "could not be bound" in result.failure.message or "simulated" in result.failure.message

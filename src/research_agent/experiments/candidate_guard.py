@@ -39,6 +39,11 @@ Five design points carry the security:
 
 * **Anything unresolvable is denied**, never allowed through.
 
+* **The sandbox is writable or importable, never both.** Native code loaded
+  out of a write root would run constructors that write with no Python event
+  at all, so imports are refused when the module file, or any ``sys.path``
+  entry, lives inside the writable tree.
+
 Trusted dependencies are imported *before* the hook is installed: NumPy loads
 ``ctypes`` on Windows, so ``ctypes.*`` cannot be denied from process start.
 Closing the gate by installing the hook, rather than by setting a flag, leaves
@@ -63,23 +68,32 @@ ALLOWED_EVENTS = frozenset(
         "os.chdir",
         "os.getxattr",
         "os.listxattr",
-        "os.add_dll_directory",  # NumPy locates its native libraries with this
         "os.putenv",
         "os.unsetenv",
         "glob.glob",
         "glob.glob/2",
         "mmap.__new__",  # a writable mapping still needs a permitted open()
+        # Display-only hooks that fire while an exception is being reported.
+        "sys.excepthook",
+        "sys.unraisablehook",
+        # The only sys.* event a real scorer raises. The rest of the namespace
+        # is denied: sys._getframe, sys._current_frames, sys.settrace and
+        # sys.setprofile all hand back frame objects, and on 3.13+ frame
+        # f_locals writes through -- which reaches the hook's closure cells.
+        "sys._getframemodulename",
     }
 )
 
-# Namespaces that are pure computation or interpreter introspection.
+# Namespaces that are pure computation. Deliberately NOT here: `gc.`, whose
+# get_objects/get_referrers enumerate live objects, which is enough to find
+# the hook function and assign to `hook.__closure__[i].cell_contents`. Cells
+# are writable, so that would let a candidate swap out the write roots, the
+# read roots, or the allow list itself.
 ALLOWED_PREFIXES = (
     "builtins.",
     "object.",
     "function.",
     "code.",
-    "sys.",
-    "gc.",
     "marshal.",
     "pickle.",
     "array.",
@@ -235,6 +249,37 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                     raise _violation(
                         f"candidate may not {event} outside its sandbox: {value!r}"
                     )
+            return
+
+        if event == "import":
+            # A candidate that writes a shared library into its sandbox and
+            # imports it runs native constructors, which fopen/write with no
+            # Python event at all. Both routes are visible here: a direct
+            # ExtensionFileLoader populates `filename`, while a sys.path
+            # import leaves it None but exposes the search path.
+            filename = args[1] if len(args) > 1 else None
+            if filename is not None:
+                loaded = canonical(filename)
+                if loaded is not None and contained(loaded, writable):
+                    raise _violation(
+                        f"candidate may not import from its writable sandbox: {filename!r}"
+                    )
+            for entry in (args[2] if len(args) > 2 else None) or ():
+                if not entry or entry == ".":
+                    raise _violation("candidate may not import with cwd on sys.path")
+                resolved = canonical(entry)
+                if resolved is not None and contained(resolved, writable):
+                    raise _violation(
+                        f"candidate may not put a writable directory on sys.path: {entry!r}"
+                    )
+            return
+
+        if event == "os.add_dll_directory":
+            # Legitimate NumPy use happens before the hook exists; afterwards
+            # this would only ever widen the native search path.
+            added = canonical(args[0]) if args else None
+            if added is None or contained(added, writable):
+                raise _violation("candidate may not add a sandbox directory to the DLL path")
             return
 
         if event in _allowed_events or event.startswith(_allowed_prefixes):

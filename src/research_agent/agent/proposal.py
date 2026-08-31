@@ -115,7 +115,8 @@ PROPOSAL_JSON_SCHEMA: dict[str, Any] = {
         "crossover_conflicts": {"type": "string"},
         "crossover_inappropriate_reason": {"type": "string"},
     },
-    "required": list(REQUIRED_STRING_FIELDS) + ["experiment_parameters"],
+    "required": list(REQUIRED_STRING_FIELDS)
+    + ["experiment_parameters", "research_family", "mechanism_tags", "changed_axes"],
 }
 
 
@@ -233,15 +234,30 @@ class ResearchProposal:
         for extra_parent in parent_ids:
             if not EXPERIMENT_ID_RE.fullmatch(extra_parent):
                 raise ProposalError(f"invalid selected_parent_ids entry {extra_parent!r}")
+        # Diversity suppression and crossover parent choice both key off the semantic
+        # signature. During the P0 sprint seven of eight proposals left these blank, the
+        # signature collapsed to ("other", (), ()), and diversity.duplicate_reason
+        # short-circuits on that. Requiring them re-arms both mechanisms.
+        family = str(data.get("research_family") or "").strip()
+        if not family or family.lower() == "other":
+            raise ProposalError(
+                "research_family must be a specific non-empty family, not 'other'"
+            )
+        mechanism_tags = _optional_str_tuple(data.get("mechanism_tags"), "mechanism_tags")
+        if not mechanism_tags:
+            raise ProposalError("mechanism_tags must list at least one mechanism tag")
+        changed_axes = _optional_str_tuple(data.get("changed_axes"), "changed_axes")
+        if not changed_axes:
+            raise ProposalError("changed_axes must list at least one changed research axis")
         return cls(
             schema_version=str(data.get("schema_version", PROPOSAL_SCHEMA_VERSION)),
             experiment_parameters=dict(params),
             seed=seed,
             timeout_seconds=timeout,
             operator=operator,
-            research_family=str(data.get("research_family") or "").strip(),
-            mechanism_tags=_optional_str_tuple(data.get("mechanism_tags"), "mechanism_tags"),
-            changed_axes=_optional_str_tuple(data.get("changed_axes"), "changed_axes"),
+            research_family=family,
+            mechanism_tags=mechanism_tags,
+            changed_axes=changed_axes,
             required_data_fields=_optional_str_tuple(
                 data.get("required_data_fields"), "required_data_fields"
             ),

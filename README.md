@@ -11,7 +11,7 @@ This is not generic AutoML.
 1. **Problem.** Recommender research is a slow human loop: hypothesize, code, train, read official metrics, repeat.
 2. **Novelty.** The LLM proposes hypotheses, mutations, crossovers, and repairs. It does **not** pick elites. The Evolution Controller does **not** invent ML ideas.
 3. **How it works.** Research state → Gemini → generated candidate → isolated runner → official `evaluate.py` → registry → population / elite / budgets → next state.
-4. **Evidence (validation only).** Under the same priors and six new evaluations, evolutionary search found an extra improvement; matched sequential search did not beat the starting elite. We do **not** claim statistical significance.
+4. **Evidence (validation only).** Under the same priors and six new evaluations, evolutionary search found an extra improvement; matched sequential search did not beat the starting elite. A later sprint, run after an independent audit fixed three search blind spots, improved it again. The final candidate is the first here to clear a 95% paired bootstrap interval against the FM root. We do **not** claim significance over the previous candidate.
 5. **Reproduce.** `pytest` is free. Live Gemini needs `GEMINI_API_KEY`. Commands: [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md).
 
 ```mermaid
@@ -37,10 +37,11 @@ Exact values: [`docs/evidence/canonical_benchmark.json`](docs/evidence/canonical
 | Phase 3 sequential (3-seed bagging) | FM | 3 | **0.6021109** | +0.0006422 | +0.0006422 |
 | Phase 4 matched sequential | FM + 3-seed | 6 | **0.6021109** | +0.0006422 | 0 |
 | Phase 4 evolutionary search | FM + 3-seed | 6 | **0.6023186** | +0.0008499 | **+0.0002077** |
+| Sprint 2 evolutionary search | + SWA7 elite | 7 | **0.6029037** | +0.0014350 | **+0.0005851** |
 
 Under the same prior knowledge and six new experiment evaluations, evolutionary search found an additional validation improvement while the matched sequential search did not surpass the starting elite.
 
-Final candidate: 7-seed official FM, top-2 checkpoint SWA per seed, raw probability average. Frozen in-repo as `src/research_agent/recommenders/fm_swa7_ensemble_scorer.py`. Same-seed valid re-run matched **0.6023186** exactly.
+Phase 4 candidate: 7-seed official FM, top-2 checkpoint SWA per seed, mean of raw FM scores. Frozen in-repo as `src/research_agent/recommenders/fm_swa7_ensemble_scorer.py`. Same-seed valid re-run matched **0.6023186** exactly. **Superseded** by the sprint-2 candidate below, and kept as historical evidence.
 
 Phase 4 evolution resources: 6 LLM calls, 139830 tokens, ~33 min, 0 GPU-hours, **0 manual interventions**. Live model: Gemini 3.6 Flash (intended: 3.7 Flash; Developer API returned high-demand).
 
@@ -63,6 +64,50 @@ flowchart TB
   WIN --> X006
 ```
 
+### Sprint 2 — after an independent audit of the search space
+
+An independent second-opinion review (Opus) found three blind spots: regularization and the
+training objective were unreachable, `parent + alpha * residual` was a degenerate safe
+hill-climb that could not lose, and blank diversity metadata had silently disabled duplicate
+suppression and crossover. It also found a runtime bug that made every ranking-objective
+attempt time out rather than produce evidence. After fixing those **affordances** — not the
+architecture — one further autonomous sprint ran with the frozen 0.6023186 candidate as a
+starting prior.
+
+The agent reached both named axes by itself. It tested a within-user listwise softmax
+objective on the new machinery (a real negative result at last, not a timeout), introduced
+tier-adaptive L2 unprompted, and independently rediscovered that varying embedding dimension
+does not help. It stopped on **convergence** with budget remaining: 7 of 8 evaluations,
+46 min, 0 GPU, **0 manual interventions**.
+
+**Final candidate** (`final-tiered-ensemble`): 8 FM members, top-2 checkpoint SWA each,
+averaged as raw FM scores, tiered by train-row selection *and* L2 strength. Frozen as
+`src/research_agent/recommenders/tiered_ensemble_scorer.py`.
+
+Paired user bootstrap, 2000 reps:
+
+| Comparison | Δ | 95% CI | P(Δ>0) |
+| --- | --- | --- | --- |
+| vs FM root | +0.0014350 | [+0.00026, +0.00262] | **0.990** |
+| vs Phase 4 SWA7 | +0.0005851 | [−0.00034, +0.00150] | 0.888 |
+
+It is the first candidate here to clear 95% against the FM root. Against the previous
+candidate the interval includes zero, so **no significance is claimed there**.
+
+It is also cheaper on the same harness despite having one more member: **173.9s vs 225.0s**
+on valid (−22.7%), 208.6s vs 216.7s on test (−3.7%). 0 GPU-hours.
+
+**Test observation, after the freeze.** Selection was closed on validation; the candidate then
+ran on test **once** for the official CSV. Test primary **0.5963754** vs the superseded
+candidate's 0.5963862 — the validation gain **did not transfer**. That −0.0000109 difference is
+35× smaller than the paired test bootstrap SD, P(Δ>0)=0.515: on test the two are
+**statistically indistinguishable**. The validation-selected candidate was kept anyway, because
+swapping it on the strength of a test number is precisely the test-driven selection this
+project forbids.
+
+Details: [`docs/SECOND_OPINION_SPRINT.md`](docs/SECOND_OPINION_SPRINT.md) and
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md).
+
 ## Reproduce
 
 ```powershell
@@ -75,17 +120,24 @@ python -m venv .venv
 
 KuaiRand-Pure is not in git. Download steps and every paid vs free command: [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md).
 
-Frozen validation candidate (CPU, no Gemini, several minutes):
+Frozen validation candidate (CPU, no Gemini, ~3 minutes):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid
+```
+
+Superseded Phase 4 candidate, kept reproducible as historical evidence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid --legacy-swa7
 ```
 
 Official test CSV **after** freeze only:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_final_candidate.py --split test --allow-test
-.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-swa7-ensemble-test\scores.npy --split test --output submission.csv
+.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-tiered-ensemble-test\scores.npy --split test --output submission.csv
+.\.venv\Scripts\python.exe starter\kuairand\submit.py --check --split test --data_dir starter\kuairand\KuaiRand-Pure\data submission.csv
 ```
 
 Do not use test scores to select experiments. `submission.csv` is gitignored.
@@ -93,11 +145,14 @@ Do not use test scores to select experiments. `submission.csv` is gitignored.
 ## Limitations
 
 - Matched pilot is six new evaluations, not 50.
-- Primary delta vs the starting elite is +0.0002077, below organizer ε=0.002. No significance claim.
+- Primary delta vs the starting elite is +0.0005851, below organizer ε=0.002. No significance claim against the previous candidate.
 - NumPy-only environment blocked silent torch/deep-model “wins”.
-- Crossover did not beat the best mutation in the first live pilot.
+- Crossover did not beat the best mutation in the first live pilot. It did in sprint 2.
 - Gemini 3.7 Flash was capacity-blocked on the Developer API; live evidence used 3.6 Flash. That is provider resilience, not hidden human steering.
 - Longer search might find more. We did not burn a 6-hour run for a likely still-sub-epsilon gain. The software still enforces 50 evals / 6h / ε=0.002 / patience=3.
+- Validation itself is noisy: bootstrapping users gives an absolute primary SD of ~0.0022, about the size of organizer ε. Paired against a shared baseline it is ~0.0005. Sprint 2's +0.00059 over the previous elite beats it at every seed tried but its paired interval still includes zero.
+- **The validation gain did not transfer to test.** The two candidates differ by −0.0000109 there, P(Δ>0)=0.515 — indistinguishable. We kept the validation-selected one because the selection rule was fixed in advance, not because test preferred it.
+- The winner's two ingredients — tiered train-row filtering and tier-adaptive L2 — are confounded in one candidate. Nobody ablated them.
 
 The contribution is the **auditable research system**, not a huge leaderboard jump.
 
@@ -114,5 +169,8 @@ The contribution is the **auditable research system**, not a huge leaderboard ju
 | Devpost draft | [`docs/DEVPOST.md`](docs/DEVPOST.md) |
 | Submission checklist | [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md) |
 | Testing | [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md) |
+| P0 sprint | [`docs/PERFORMANCE_SPRINT.md`](docs/PERFORMANCE_SPRINT.md) |
+| Second-opinion audit + sprint 2 | [`docs/SECOND_OPINION_SPRINT.md`](docs/SECOND_OPINION_SPRINT.md) |
+| Research-space audit | [`docs/RESEARCH_SPACE_AUDIT.md`](docs/RESEARCH_SPACE_AUDIT.md) |
 
 Official starter: `starter/kuairand/` (organizer files; do not edit `evaluate.py`). Fingerprint: `ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de`.

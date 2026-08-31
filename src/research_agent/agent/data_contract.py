@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from research_agent.lab.capabilities import lab_contract_dict
 from research_agent.llm.secrets import sanitize
 
 # Organizer README lists these log columns. data.load() does not copy them into tuples.
@@ -55,10 +56,15 @@ _LOAD_TUPLE_FALLBACK = (
 _CONTRACT_RULE = (
     "A proposal that claims mechanism X must actually have the data required to execute X. "
     "data.load() returns 7-tuples; it does not expose is_like, play_time_ms, or other aux log columns. "
-    "To use those columns, the candidate must read the raw CSVs itself. "
-    "Do not dump raw rows into prompts. Official target is long_view. "
+    "To use those columns, read raw CSVs or call research_agent.lab train-aux / history APIs. "
+    "Train-derived features must come from train. Validation labels are evaluator-only. "
+    "TEST IS SEALED. Do not dump raw rows into prompts. Official target is long_view. "
     "Evaluation is within-user ranking with GAUC, nDCG@5, and primary = mean of those two."
 )
+
+_LAB_AUX_APIS = ("get_user_history", "train_aux", "train_events")
+_LAB_CONTEXT_APIS = ("inference_rows", "get_user_history", "train_events")
+_LAB_CONTEXT_FIELDS = frozenset(("hourmin", "time_ms"))
 
 
 class DataContractError(ValueError):
@@ -110,6 +116,8 @@ class DataContract:
                 "not_available_via_load": list(self.not_available_via_load),
                 "raw_files": [dict(item) for item in self.raw_files],
                 "starter_data_py": self.starter_data_py,
+                "lab": lab_contract_dict(),
+                "test_sealed": True,
                 "rule": self.rule,
             }
         )
@@ -210,6 +218,8 @@ def claimed_unavailable_fields(
     if not hits:
         return ()
     if _reads_claimed_fields_from_raw_csv(source, tuple(hits)):
+        return ()
+    if _lab_exposes_claimed_fields(source, tuple(hits)):
         return ()
     return tuple(hits)
 
@@ -341,6 +351,12 @@ def _raw_file_inventory(data_dir: Path | None) -> list[dict[str, Any]]:
             "used_by_load": False,
             "note": "Random-exposure log. Not read by data.load().",
         },
+        {
+            "file": "video_features_statistic_pure.csv",
+            "used_by_load": False,
+            "leakage_risk": "high",
+            "note": "Unscoped catalog engagement counts. Date window unknown. Do not use as default popularity.",
+        },
     ]
     if data_dir is None:
         return catalog
@@ -389,5 +405,34 @@ def _reads_claimed_fields_from_raw_csv(source: str, fields: tuple[str, ...]) -> 
         return False
     lowered = source.replace("\\", "/")
     if not any(marker in lowered for marker in _RAW_LOG_MARKERS):
+        return False
+    return all(_mentions_field(source, name) for name in fields)
+
+
+def _lab_exposes_claimed_fields(source: str, fields: tuple[str, ...]) -> bool:
+    if not fields:
+        return False
+    if "SplitSafeStore" not in source and "research_agent.lab" not in source:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            called.add(func.attr)
+        elif isinstance(func, ast.Name):
+            called.add(func.id)
+    aux_fields = tuple(name for name in fields if name not in _LAB_CONTEXT_FIELDS)
+    context_fields = tuple(name for name in fields if name in _LAB_CONTEXT_FIELDS)
+    if aux_fields and not called.intersection(_LAB_AUX_APIS):
+        return False
+    if context_fields and not called.intersection(_LAB_CONTEXT_APIS):
+        return False
+    if not aux_fields and not context_fields:
         return False
     return all(_mentions_field(source, name) for name in fields)

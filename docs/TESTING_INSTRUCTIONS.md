@@ -46,10 +46,11 @@ Needs KuaiRand-Pure. FM is ~1 minute on this machine.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_experiment.py --spec configs\experiments\fm_valid.json
-.\.venv\Scripts\python.exe scripts\run_experiment.py --spec configs\experiments\final_swa7_valid.json
+.\.venv\Scripts\python.exe scripts\run_experiment.py --spec configs\experiments\final_tiered_valid.json
 ```
 
-The frozen candidate trains 7 FM members with SWA. Expect several minutes (~6 min for the live elite).
+The frozen candidate trains 8 tiered FM members with SWA. Expect ~3 minutes (173.9s measured).
+The superseded Phase 4 candidate is `configs\experiments\final_swa7_valid.json` (7 members, 225.0s).
 
 `--allow-test` is required for any test split. Do not use test to pick a model.
 
@@ -92,11 +93,17 @@ Validation freeze (no Gemini):
 .\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid
 ```
 
+Superseded Phase 4 candidate, kept reproducible as historical evidence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid --legacy-swa7
+```
+
 Official test CSV **after** the candidate is frozen. This does **not** feed elite ranking:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_final_candidate.py --split test --allow-test
-.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-swa7-ensemble-test\scores.npy --split test --output submission.csv
+.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-tiered-ensemble-test\scores.npy --split test --output submission.csv
 .\.venv\Scripts\python.exe starter\kuairand\submit.py --check --split test --data_dir starter\kuairand\KuaiRand-Pure\data submission.csv
 ```
 

@@ -22,10 +22,12 @@ _PROBE_UNSUPPORTED = (
 )
 
 STARTER_MODULES = ("data", "baseline", "evaluate")
+PROJECT_MODULES = ("research_agent.lab",)
 
 _ENV_RULE = (
     "Generated experiments must use only this environment "
-    "(Python stdlib, listed allowed third-party packages, and starter modules data/baseline/evaluate). "
+    "(Python stdlib, listed allowed third-party packages, starter modules data/baseline/evaluate, "
+    "and project module research_agent.lab). "
     "If the proposed method cannot execute, fail explicitly. "
     "Do not silently fall back to the FM baseline, the selected parent, or another algorithm "
     "and emit those scores as evidence for the claimed hypothesis."
@@ -40,6 +42,7 @@ class EnvironmentCapabilities:
     allowed_third_party: tuple[str, ...]
     unsupported_or_unavailable: tuple[str, ...]
     starter_modules: tuple[str, ...] = STARTER_MODULES
+    project_modules: tuple[str, ...] = PROJECT_MODULES
     rule: str = _ENV_RULE
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,6 +54,8 @@ class EnvironmentCapabilities:
                 "allowed_third_party": list(self.allowed_third_party),
                 "unsupported_or_unavailable": list(self.unsupported_or_unavailable),
                 "starter_modules": list(self.starter_modules),
+                "project_modules": list(self.project_modules),
+                "lab_import": "from research_agent.lab import SplitSafeStore",
                 "rule": self.rule,
             }
         )

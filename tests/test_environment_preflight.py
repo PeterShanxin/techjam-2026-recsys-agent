@@ -45,6 +45,8 @@ def test_discover_environment_lists_numpy_not_torch():
     assert payload["platform"]
     assert payload["architecture"]
     assert "numpy" in payload["allowed_third_party"]
+    assert "research_agent.lab" in payload["project_modules"]
+    assert "research_agent" not in payload["project_modules"]
     assert "torch" in payload["unsupported_or_unavailable"]
     assert "numpy" not in payload["unsupported_or_unavailable"]
     rule = payload["rule"].lower()
@@ -79,6 +81,26 @@ def test_research_state_includes_environment_capabilities(tmp_path: Path):
 def test_stdlib_and_numpy_imports_allowed(tmp_path: Path):
     dest, root = _dest(tmp_path)
     validate_candidate_source(CANDIDATE_SOURCE, dest, root)
+
+
+def test_research_agent_lab_import_allowed(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = "from research_agent.lab import SplitSafeStore, recency_weight\n" + CANDIDATE_SOURCE
+    validate_candidate_source(src, dest, root)
+
+
+def test_research_agent_recommender_import_rejected(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = "from research_agent.recommenders.fm_scorer import main\n" + CANDIDATE_SOURCE
+    with pytest.raises(SafetyError, match=r"unsupported_dependency:\s*research_agent.recommenders"):
+        validate_candidate_source(src, dest, root)
+
+
+def test_bare_research_agent_import_rejected(tmp_path: Path):
+    dest, root = _dest(tmp_path)
+    src = "import research_agent\n" + CANDIDATE_SOURCE
+    with pytest.raises(SafetyError, match=r"unsupported_dependency:\s*research_agent"):
+        validate_candidate_source(src, dest, root)
 
 
 def test_unsupported_torch_import_rejected(tmp_path: Path):

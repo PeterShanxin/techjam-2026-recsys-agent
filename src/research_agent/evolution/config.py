@@ -8,6 +8,7 @@ COMPETITION_MAX_EVALUATIONS = 50
 COMPETITION_WALL_SECONDS = 6 * 3600.0
 COMPETITION_EPSILON = 0.002
 COMPETITION_PATIENCE = 3
+DEFAULT_STARTING_PRIOR_IDS = ("fm-ensemble-3seed", "final-swa7-ensemble")
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class EvolutionConfig:
     generations: int = 2
     max_new_evaluations: int = 6
     include_ensemble_seed: bool = True
+    starting_prior_ids: tuple[str, ...] | None = None
     fill_to_size_on_init: bool = True
     token_budget: int | None = None
     wall_clock_seconds: float | None = None
@@ -26,6 +28,11 @@ class EvolutionConfig:
     prefer_crossover_from_generation: int = 2
     max_repairs: int = 2
     experiment_timeout_seconds: float = 900.0
+    # Behavioural no-op gate. A child whose within-user ordering matches a parent's on
+    # all but this share of rows is a reparameterisation, not a hypothesis. Disabled on
+    # splits below near_identity_min_rows, where ordering agreement is coincidence.
+    near_identity_min_rank_change: float = 0.001
+    near_identity_min_rows: int = 1000
 
     def __post_init__(self) -> None:
         if self.population_size < 1:
@@ -38,6 +45,15 @@ class EvolutionConfig:
             raise ValueError("generations must be >= 0")
         if self.max_new_evaluations < 0:
             raise ValueError("max_new_evaluations must be >= 0")
+        if self.starting_prior_ids is not None:
+            object.__setattr__(self, "starting_prior_ids", tuple(self.starting_prior_ids))
+
+    def resolved_starting_prior_ids(self) -> tuple[str, ...]:
+        if self.starting_prior_ids is not None:
+            return tuple(self.starting_prior_ids)
+        if self.include_ensemble_seed:
+            return DEFAULT_STARTING_PRIOR_IDS
+        return ()
 
     @property
     def offspring_per_generation(self) -> int:

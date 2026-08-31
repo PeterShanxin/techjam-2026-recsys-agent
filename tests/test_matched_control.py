@@ -6,9 +6,10 @@ from pathlib import Path
 from experiment_helpers import make_spec, write_candidate
 from research_agent.agent import ResearchAgent
 from research_agent.agent.constants import FM_ROOT_ID
-from research_agent.evolution.config import EvolutionConfig
+from research_agent.evolution.config import DEFAULT_STARTING_PRIOR_IDS, EvolutionConfig
 from research_agent.evolution.seeds import (
     ENSEMBLE_SEED_ID,
+    SWA7_PRIOR_ID,
     MATCHED_STARTING_SEED_IDS,
     ensure_matched_starting_seeds,
     ensure_prior_spec,
@@ -51,8 +52,11 @@ def _agent(tmp_path: Path, script: list, **kwargs) -> ResearchAgent:
 
 
 def test_matched_starting_seed_ids_match_evolution_defaults():
-    assert MATCHED_STARTING_SEED_IDS == (FM_ROOT_ID, ENSEMBLE_SEED_ID)
+    assert MATCHED_STARTING_SEED_IDS == (FM_ROOT_ID, ENSEMBLE_SEED_ID, SWA7_PRIOR_ID)
+    assert DEFAULT_STARTING_PRIOR_IDS == (ENSEMBLE_SEED_ID, SWA7_PRIOR_ID)
     assert EvolutionConfig().include_ensemble_seed is True
+    assert EvolutionConfig().resolved_starting_prior_ids() == DEFAULT_STARTING_PRIOR_IDS
+    assert EvolutionConfig(include_ensemble_seed=False).resolved_starting_prior_ids() == ()
 
 
 def test_ensure_matched_starting_seeds_inserts_fm_and_ensemble(tmp_path: Path):
@@ -65,7 +69,7 @@ def test_ensure_matched_starting_seeds_inserts_fm_and_ensemble(tmp_path: Path):
     assert agent.ledger.completed_experiments == 2
     assert agent._prior_wall_seconds > 0
     ids = set(agent.runner.registry.iter_ids())
-    assert set(MATCHED_STARTING_SEED_IDS) <= ids
+    assert {FM_ROOT_ID, ENSEMBLE_SEED_ID} <= ids
     assert seed.spec.parent_ids == (FM_ROOT_ID,)
 
 

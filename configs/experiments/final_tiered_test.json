@@ -1,0 +1,20 @@
+{
+  "experiment_id": "final-tiered-ensemble-test",
+  "parent_ids": [
+    "rs-20260831T062638Z-939b7000-007",
+    "rs-20260831T062638Z-939b7000-006"
+  ],
+  "hypothesis": "Split an 8-member SWA FM ensemble across three tiers that differ in both train-row selection and L2 strength, keeping half the members on the full catalog, and average the members in probability space.",
+  "rationale": "Frozen validation-selected candidate. Test scores are for the official CSV only and must not be used to pick experiments.",
+  "origin": "crossover",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/tiered_ensemble_scorer.py"
+  },
+  "parameters": {},
+  "seed": 42,
+  "evaluation_split": "test",
+  "timeout_seconds": 1800,
+  "allow_test_split": true,
+  "tags": ["phase5", "final", "submission", "family:ensemble"],
+  "notes": "Final submission scoring only. Requires scripts/run_experiment.py --allow-test."
+}

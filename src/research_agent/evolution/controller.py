@@ -25,9 +25,10 @@ from research_agent.llm.types import (
 from .config import EvolutionConfig
 from .diversity import duplicate_reason, member_signature
 from .fitness import compute_fitness, rank_members, select_elites
+from .identity import NEAR_IDENTITY_VALIDITY, first_near_identity, load_scores
 from .lineage import format_lineage, session_lineage_forest
 from .prompts import crossover_prompt, mutation_prompt
-from .seeds import ensure_prior_spec, ensemble_seed_spec
+from .seeds import ensure_prior_spec, prior_spec_for
 from .types import (
     EvolutionRun,
     GenerationRecord,
@@ -45,9 +46,16 @@ STOP_FATAL = "fatal_provider_error"
 
 
 class EvolutionController:
-    def __init__(self, *, agent: ResearchAgent, config: EvolutionConfig | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        agent: ResearchAgent,
+        config: EvolutionConfig | None = None,
+        prior_specs: list[ExperimentSpec] | None = None,
+    ) -> None:
         self.agent = agent
         self.config = config or EvolutionConfig()
+        self._prior_specs_override = prior_specs
         self.session_id = agent.session_id
         self.trace_dir = Path(agent.runner.runs_dir) / "evolution" / self.session_id
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -64,6 +72,7 @@ class EvolutionController:
         self.stop_reason: str | None = None
         self.stagnation = 0
         self._best_fitness: float | None = None
+        self._research_users: list[Any] | None = None
 
     def run(self) -> EvolutionRun:
         self._started = time.perf_counter()
@@ -124,12 +133,13 @@ class EvolutionController:
         root_member = self._member_from_root(root)
         self.all_members.append(root_member)
         members = [root_member]
-        if self.config.include_ensemble_seed:
-            seed = self._ensure_ensemble_seed(root_member)
-            if seed is not None:
-                if seed.experiment_id not in {item.experiment_id for item in self.all_members}:
-                    self.all_members.append(seed)
-                members.append(seed)
+        for spec in self._starting_prior_specs(root_member.experiment_id):
+            seed = self._ensure_prior_member(spec)
+            if seed is None:
+                continue
+            if seed.experiment_id not in {item.experiment_id for item in self.all_members}:
+                self.all_members.append(seed)
+            members.append(seed)
         if self.config.fill_to_size_on_init:
             members = self._fill(members, generation=0)
         population = Population(members=self._mark_elites(members))
@@ -425,7 +435,21 @@ class EvolutionController:
             child_seed=proposal.seed,
             parent_records=parent_records,
         )
-        if validity == "semantic_noop":
+        if validity == "hypothesis_tested" and result.status == "success":
+            identity = self._near_identity_report(result, parent_ids)
+            if identity is not None:
+                validity = NEAR_IDENTITY_VALIDITY
+                self.diversity_events.append(
+                    {
+                        "reason": NEAR_IDENTITY_VALIDITY,
+                        "hypothesis": proposal.hypothesis,
+                        "research_family": proposal.research_family or "other",
+                        "generation": generation,
+                        "experiment_id": experiment_id,
+                        **identity.to_dict(),
+                    }
+                )
+        if validity in {"semantic_noop", NEAR_IDENTITY_VALIDITY}:
             self.agent.runner.registry.mark_decision(experiment_id, "rejected")
         scientific = validity == "hypothesis_tested" and result.status == "success"
         member = self._member_from_result(
@@ -461,8 +485,15 @@ class EvolutionController:
         )
         return member
 
-    def _ensure_ensemble_seed(self, root: PopulationMember) -> PopulationMember | None:
-        spec = ensemble_seed_spec(parent_id=root.experiment_id)
+    def _starting_prior_specs(self, root_id: str) -> list[ExperimentSpec]:
+        if self._prior_specs_override is not None:
+            return list(self._prior_specs_override)
+        return [
+            prior_spec_for(prior_id, parent_id=root_id)
+            for prior_id in self.config.resolved_starting_prior_ids()
+        ]
+
+    def _ensure_prior_member(self, spec: ExperimentSpec) -> PopulationMember | None:
         existing = self.agent.runner.registry.peek(spec.experiment_id)
         reused = existing is not None and existing.result is not None
         entry = ensure_prior_spec(self.agent.runner, spec)
@@ -482,11 +513,14 @@ class EvolutionController:
             research_validity="hypothesis_tested" if entry.result.status == "success" else "implementation_failure",
             scientific_evidence=entry.result.status == "success",
         )
+        family = _family_from_tags(entry.spec.tags) or "ensemble"
+        tags = _tag_values(entry.spec.tags, "mech:") or ("bagging",)
+        axes = _tag_values(entry.spec.tags, "axis:") or ("ensembling",)
         member = member.with_updates(
             fitness=compute_fitness(member, efficiency_penalty=self.config.efficiency_penalty),
-            research_family="ensemble",
-            mechanism_tags=("bagging",),
-            changed_axes=("ensembling",),
+            research_family=family,
+            mechanism_tags=tags,
+            changed_axes=axes,
         )
         return member
 
@@ -651,6 +685,59 @@ class EvolutionController:
         spec = self.agent.runner.registry.get(experiment_id).spec
         return self.agent.workspace.load_parent_source(spec, self.agent.runner.repo_root)
 
+    def _research_user_ids(self) -> list[Any] | None:
+        """Validation user ids, for within-user ordering comparisons. Labels never read."""
+        if self._research_users is None:
+            try:
+                from research_agent.evaluation.official import official_load
+
+                rows = official_load(self.agent.runner.data_dir).get(RESEARCH_SPLIT) or []
+            except Exception:  # noqa: BLE001 - identity check is advisory, never fatal
+                self._research_users = []
+            else:
+                self._research_users = [row[1] for row in rows]
+        return self._research_users or None
+
+    def _near_identity_report(self, result: Any, parent_ids: tuple[str, ...]) -> Any:
+        """Reject children whose within-user ordering is indistinguishable from a parent's.
+
+        Textual no-op detection cannot see a residual whose weight was tuned to zero on
+        validation. Ordering can. Failure to load a score vector is never fatal here: a
+        missing artifact leaves the child classified on the textual rule alone.
+        """
+        child = load_scores(getattr(result, "scores_path", None))
+        users = self._research_user_ids()
+        if child is None or not users or len(users) != len(child):
+            return None
+        child_primary = None
+        metrics = getattr(result, "metrics", None)
+        if metrics is not None:
+            child_primary = float(metrics.primary)
+        parents: list[tuple[str, Any]] = []
+        for pid in parent_ids:
+            entry = self.agent.runner.registry.peek(pid)
+            parent_result = None if entry is None else entry.result
+            scores = load_scores(getattr(parent_result, "scores_path", None))
+            if scores is not None:
+                parents.append((pid, scores))
+        if not parents:
+            return None
+
+        def delta_for(parent_id: str) -> float | None:
+            parent_primary = _parent_primary(self.all_members, parent_id)
+            if parent_primary is None or child_primary is None:
+                return None
+            return child_primary - parent_primary
+
+        return first_near_identity(
+            child,
+            parents,
+            users,
+            primary_delta_for=delta_for,
+            min_rank_change=self.config.near_identity_min_rank_change,
+            min_rows=self.config.near_identity_min_rows,
+        )
+
     def _same_params_and_seed(self, proposal: Any, members: list[PopulationMember]) -> bool:
         child_params = dict(getattr(proposal, "experiment_parameters", {}) or {})
         child_seed = getattr(proposal, "seed", None)
@@ -753,8 +840,26 @@ def _crossover_parents(
 def _mutation_parent(
     members: list[PopulationMember], slot: int, elite_count: int
 ) -> PopulationMember:
+    """Pick one parent. Elite-first, but never twice from the same family in a row.
+
+    The original rule was ``elites[slot % len(elites)]``. When both elites are the same
+    mechanism - which is what happens once an FM variant occupies the whole top of the
+    population - every offspring in a generation inherits the same source file, and the
+    search cannot leave that basin. Non-zero slots now prefer the best-ranked member
+    from a *different* research family before falling back to the elite list.
+
+    Still fully deterministic: no randomness, and slot 0 always gets the current elite,
+    so elite preservation and the exploit path are unchanged.
+    """
     elites = select_elites(members, elite_count) or list(members)
-    return elites[slot % len(elites)]
+    default = elites[slot % len(elites)]
+    if slot % len(elites) == 0:
+        return default
+    lead_family = member_signature(elites[0])[0]
+    for candidate in rank_members(members):
+        if member_signature(candidate)[0] != lead_family:
+            return candidate
+    return default
 
 
 def _classify_validity(

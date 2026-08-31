@@ -6,6 +6,7 @@
   "generations": 2,
   "max_new_evaluations": 6,
   "include_ensemble_seed": true,
+  "starting_prior_ids": ["fm-ensemble-3seed", "final-swa7-ensemble"],
   "fill_to_size_on_init": true,
   "convergence_epsilon": 0.002,
   "convergence_patience": 3,

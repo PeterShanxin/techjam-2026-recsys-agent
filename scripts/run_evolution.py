@@ -14,7 +14,7 @@ if str(ROOT / "src") not in sys.path:
 from research_agent.agent import ResearchAgent, UnusableRootError
 from research_agent.agent.constants import DEFAULT_RESEARCH_MODEL, DEFAULT_THINKING_LEVEL
 from research_agent.evolution import EvolutionConfig, EvolutionController
-from research_agent.evolution.seeds import ensure_matched_starting_seeds
+from research_agent.evolution.seeds import ensure_matched_starting_seeds, resolve_prior_specs
 from research_agent.experiments import ExperimentRunner
 from research_agent.llm import (
     FakeProvider,
@@ -215,7 +215,10 @@ def main(argv: list[str] | None = None) -> int:
             experiment_timeout_seconds=args.timeout,
         )
         try:
-            ensure_matched_starting_seeds(seq)
+            ensure_matched_starting_seeds(
+                seq,
+                prior_specs=resolve_prior_specs(config.resolved_starting_prior_ids()),
+            )
             seq_run = seq.run()
         except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError, UnusableRootError) as exc:
             print(redact_text(str(exc)), file=sys.stderr)

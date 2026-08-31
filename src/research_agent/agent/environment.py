@@ -22,7 +22,7 @@ _PROBE_UNSUPPORTED = (
 )
 
 STARTER_MODULES = ("data", "baseline", "evaluate")
-PROJECT_MODULES = ("research_agent",)
+PROJECT_MODULES = ("research_agent.lab",)
 
 _ENV_RULE = (
     "Generated experiments must use only this environment "

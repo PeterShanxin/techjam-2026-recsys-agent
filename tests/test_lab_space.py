@@ -121,7 +121,7 @@ def test_lab_import_passes_preflight(tmp_path: Path):
     src = "from research_agent.lab import SplitSafeStore\n" + CANDIDATE_SOURCE
     validate_candidate_source(src, dest, root)
     env = discover_environment()
-    assert "research_agent" in env.project_modules
+    assert "research_agent.lab" in env.project_modules
     assert "research_agent.lab" in env.to_dict()["lab_import"]
 
 

@@ -84,13 +84,14 @@ def is_allowed_import(name: str, environment: EnvironmentCapabilities) -> bool:
     if not name:
         return True
     project = getattr(environment, "project_modules", ())
-    if (
-        name in environment.starter_modules
-        or name in environment.allowed_third_party
-        or name in project
-    ):
+    if any(name == item or name.startswith(f"{item}.") for item in project):
         return True
-    return _is_stdlib(name)
+    root = _root_module(name)
+    if root == "research_agent":
+        return False
+    if root in environment.starter_modules or root in environment.allowed_third_party:
+        return True
+    return _is_stdlib(root)
 
 
 def validate_candidate_source(
@@ -169,12 +170,14 @@ def _call_name(func: ast.AST) -> str:
 
 def _import_toplevel_names(node: ast.AST) -> list[str]:
     if isinstance(node, ast.Import):
-        return [_root_module(alias.name) for alias in node.names if alias.name]
+        return [alias.name for alias in node.names if alias.name]
     if isinstance(node, ast.ImportFrom):
         if node.level and node.level > 0:
             return []
+        if node.module == "research_agent":
+            return [f"research_agent.{alias.name}" for alias in node.names if alias.name]
         if node.module:
-            return [_root_module(node.module)]
+            return [node.module]
         return []
     return []
 

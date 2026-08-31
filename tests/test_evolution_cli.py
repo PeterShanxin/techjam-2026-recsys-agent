@@ -222,6 +222,61 @@ def test_sequential_control_honors_empty_starting_priors(tmp_path, monkeypatch):
     assert captured["prior_ids"] == []
 
 
+def test_starting_priors_flag_wins_over_no_ensemble_seed(tmp_path, monkeypatch):
+    cli = _load_cli()
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    captured = {}
+
+    class DummyRun:
+        stop_reason = "generation_limit"
+        evaluated_offspring = 1
+        elites = []
+        population = type("P", (), {"members": []})()
+        trace_dir = tmp_path
+        summary = {"lineage": "", "resources": {}}
+        all_members = []
+
+    class DummyController:
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self):
+            return DummyRun()
+
+    class DummyAgent:
+        session_id = "ev-explicit-priors"
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self):
+            return type("SR", (), {"summary": {"session_id": "seq-control"}})()
+
+    def fake_priors(_agent, **kwargs):
+        captured["prior_ids"] = [item.experiment_id for item in kwargs.get("prior_specs") or ()]
+        return object(), object()
+
+    monkeypatch.setattr(cli, "ResearchAgent", DummyAgent)
+    monkeypatch.setattr(cli, "EvolutionController", DummyController)
+    monkeypatch.setattr(cli, "ExperimentRunner", lambda **_kwargs: object())
+    monkeypatch.setattr(cli, "ensure_matched_starting_seeds", fake_priors)
+    rc = cli.main(
+        [
+            "--provider",
+            "fake",
+            "--generations",
+            "0",
+            "--sequential-control",
+            "--no-ensemble-seed",
+            "--starting-priors",
+            "final-swa7-ensemble",
+        ]
+    )
+    assert rc == 0
+    assert captured["prior_ids"] == ["final-swa7-ensemble"]
+
+
 def test_competition_sequential_control_inherits_wall(tmp_path, monkeypatch):
     cli = _load_cli()
     monkeypatch.setattr(cli, "ROOT", tmp_path)

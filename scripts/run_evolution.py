@@ -94,10 +94,10 @@ def main(argv: list[str] | None = None) -> int:
 
     thinking = normalize_thinking_level(args.thinking)
     starting_prior_ids = None
-    if args.no_ensemble_seed:
-        starting_prior_ids = ()
-    elif args.starting_priors:
+    if args.starting_priors:
         starting_prior_ids = tuple(item.strip() for item in args.starting_priors.split(",") if item.strip())
+    elif args.no_ensemble_seed:
+        starting_prior_ids = ()
     if args.provider == "fake":
         provider = FakeProvider(script=[])
         print("provider    fake (no API calls)")

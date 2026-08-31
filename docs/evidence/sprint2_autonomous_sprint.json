@@ -1,0 +1,330 @@
+{
+  "schema": "sprint2_autonomous_evidence_v1",
+  "notes": "Second autonomous sprint on PR #14, run after an independent second-opinion audit of the P0 sprint. Values copied from persisted run artifacts. Validation only; test was never loaded or scored during this sprint.",
+  "evaluate_py_sha256_lf": "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de",
+  "session_id": "rs-20260831T062638Z-939b7000",
+  "model": "gemini-3.6-flash",
+  "thinking_level": "medium",
+  "config": {
+    "population_size": 4,
+    "elite_count": 2,
+    "generations": 4,
+    "max_new_evaluations": 8,
+    "experiment_timeout_seconds": 600,
+    "wall_clock_seconds": 4800,
+    "starting_priors": [
+      "fm-root",
+      "fm-ensemble-3seed",
+      "final-swa7-ensemble"
+    ]
+  },
+  "stop_reason": "converged",
+  "evaluated_offspring": 7,
+  "stagnation_at_stop": 3,
+  "resources": {
+    "llm_calls": 12,
+    "research_calls": 9,
+    "repair_calls": 3,
+    "mutation_calls": 3,
+    "crossover_calls": 6,
+    "smoke_calls": 0,
+    "input_tokens": 298971,
+    "output_tokens": 41662,
+    "thinking_tokens": 74472,
+    "cached_tokens": 47429,
+    "total_tokens": 415105,
+    "llm_latency_seconds": 1578.9412630000152,
+    "experiment_runtime_seconds": 1155.7570697000046,
+    "research_wall_seconds": 2761.3714233000064,
+    "completed_experiments": 6,
+    "failed_experiments": 1,
+    "manual_interventions": 0,
+    "transport_retries": 1
+  },
+  "manual_interventions": 0,
+  "gpu_hours": 0,
+  "baseline_frozen_swa7_primary": 0.6023186326402106,
+  "experiments": [
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-001",
+      "operator": "mutation",
+      "parent_ids": [
+        "final-swa7-ensemble"
+      ],
+      "research_family": "ranking_loss",
+      "mechanism_tags": [
+        "listwise_loss",
+        "gradient_fm",
+        "user_groups",
+        "ensemble"
+      ],
+      "changed_axes": [
+        "training_objective",
+        "loss_function"
+      ],
+      "hypothesis": "Replacing standard pointwise BCE training with a vectorized joint Pointwise-BCE + Within-User Listwise Softmax loss (L = L_BCE + lambda * L_Listwise) using GradientFM and user_groups will directly optimize relative item ordering within each user group during SGD, raising validation GAUC and nDCG@5 beyond 0.60232 while executing in <150 seconds.",
+      "used_lab_ranking_machinery": true,
+      "status": "success",
+      "primary": 0.6000768643758159,
+      "GAUC": 0.6651442897947137,
+      "nDCG@5": 0.5350094389569181,
+      "delta_vs_frozen_swa7": -0.0022417682643947057,
+      "wall_seconds": 211.33814000000712,
+      "failure": null
+    },
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-004",
+      "operator": "mutation",
+      "parent_ids": [
+        "final-swa7-ensemble"
+      ],
+      "research_family": "training_data_selection",
+      "mechanism_tags": [
+        "train_row_filtering",
+        "within_user_variance_selection",
+        "swa",
+        "bagging"
+      ],
+      "changed_axes": [
+        "training_data_selection"
+      ],
+      "hypothesis": "Filtering the training data to retain only train users with within-user target variance (at least 2 impressions with both positive and negative labels) will focus SGD gradient updates entirely on informative relative preference pairs, leading to sharper within-user feature representations and raising validation primary beyond 0.60232.",
+      "used_lab_ranking_machinery": false,
+      "status": "success",
+      "primary": 0.6023929259908379,
+      "GAUC": 0.6684544678473614,
+      "nDCG@5": 0.5363313841343145,
+      "delta_vs_frozen_swa7": 7.429335062736353e-05,
+      "wall_seconds": 130.90290270000696,
+      "failure": null
+    },
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-005",
+      "operator": "crossover",
+      "parent_ids": [
+        "rs-20260831T062638Z-939b7000-004",
+        "final-swa7-ensemble"
+      ],
+      "research_family": "training_data_selection",
+      "mechanism_tags": [
+        "train_row_filtering",
+        "stochastic_subsampling",
+        "swa",
+        "bagging"
+      ],
+      "changed_axes": [
+        "training_data_selection"
+      ],
+      "hypothesis": "Combining Parent A's within-user variance row identification (retaining 100% of informative preference pair rows) with Parent B's full dataset coverage via dynamic per-epoch stochastic subsampling (15%) of uninformative user rows will maintain sharp relative preference updates while preserving global item frequency and base-rate calibration, raising validation primary beyond 0.60239.",
+      "used_lab_ranking_machinery": false,
+      "status": "failed",
+      "primary": null,
+      "GAUC": null,
+      "nDCG@5": null,
+      "delta_vs_frozen_swa7": null,
+      "wall_seconds": 9.70535399999062,
+      "failure": "subprocess"
+    },
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-006",
+      "operator": "crossover",
+      "parent_ids": [
+        "rs-20260831T062638Z-939b7000-004",
+        "final-swa7-ensemble"
+      ],
+      "research_family": "ensemble",
+      "mechanism_tags": [
+        "heterogeneous_data_ensemble",
+        "train_row_filtering",
+        "swa",
+        "bagging"
+      ],
+      "changed_axes": [
+        "ensembling",
+        "training_data_selection"
+      ],
+      "hypothesis": "Combining 4 FM ensemble members trained on Parent A's target-variance filtered rows with 4 FM ensemble members trained on Parent B's full dataset creates a heterogeneous data subagging ensemble. Averaging raw predictions from both distributions will fuse sharp relative preference scoring with global catalog representation, pushing validation primary beyond 0.60239.",
+      "used_lab_ranking_machinery": false,
+      "status": "success",
+      "primary": 0.6024617281182425,
+      "GAUC": 0.6685685130507434,
+      "nDCG@5": 0.5363549431857416,
+      "delta_vs_frozen_swa7": 0.00014309547803192935,
+      "wall_seconds": 162.05755340000906,
+      "failure": null
+    },
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-007",
+      "operator": "crossover",
+      "parent_ids": [
+        "rs-20260831T062638Z-939b7000-006",
+        "rs-20260831T062638Z-939b7000-004"
+      ],
+      "research_family": "ensemble",
+      "mechanism_tags": [
+        "heterogeneous_data_ensemble",
+        "tiered_variance_filtering",
+        "capacity_control",
+        "swa",
+        "bagging"
+      ],
+      "changed_axes": [
+        "ensembling",
+        "training_data_selection",
+        "regularization"
+      ],
+      "hypothesis": "Combining Parent A's heterogeneous multi-dataset ensembling framework with Parent B's target-variance data selection\u2014extended into a 3-tier filtering architecture (Strict-Variance with tot>=3, Moderate-Variance with tot>=2, and Full Catalog) coupled with tier-adaptive L2 regularization (1e-4, 1e-5, 1e-6)\u2014will create a multi-granularity ensemble that captures high-confidence within-user preference pairs while preserving broad catalog feature representations and preventing subagging overfitting, raising validation primary beyond 0.60246.",
+      "used_lab_ranking_machinery": false,
+      "status": "success",
+      "primary": 0.6025183133183196,
+      "GAUC": 0.6687212843822535,
+      "nDCG@5": 0.5363153422543856,
+      "delta_vs_frozen_swa7": 0.00019968067810904877,
+      "wall_seconds": 246.20893320000323,
+      "failure": null
+    },
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-008",
+      "operator": "crossover",
+      "parent_ids": [
+        "rs-20260831T062638Z-939b7000-007",
+        "rs-20260831T062638Z-939b7000-006"
+      ],
+      "research_family": "ensemble",
+      "mechanism_tags": [
+        "heterogeneous_data_ensemble",
+        "tiered_variance_filtering",
+        "capacity_control",
+        "catalog_balanced_subagging",
+        "swa"
+      ],
+      "changed_axes": [
+        "ensembling",
+        "training_data_selection",
+        "regularization"
+      ],
+      "hypothesis": "Fusing Parent A's 3-tier variance filtering setup (Strict tot>=3, Moderate tot>=2, Full) and tier-adaptive L2 regularization (1e-4, 1e-5, 1e-6) with Parent B's 50% full-catalog ensemble allocation (2 Strict + 2 Moderate + 4 Full catalog SWA FM members, total 8 models) will maintain Parent A's high GAUC while recovering Parent B's superior top-k nDCG@5, raising validation primary beyond 0.60252.",
+      "used_lab_ranking_machinery": false,
+      "status": "success",
+      "primary": 0.6029037142533181,
+      "GAUC": 0.6690881485589812,
+      "nDCG@5": 0.536719279947655,
+      "delta_vs_frozen_swa7": 0.000585081613107552,
+      "wall_seconds": 183.68912139999156,
+      "failure": null
+    },
+    {
+      "experiment_id": "rs-20260831T062638Z-939b7000-009",
+      "operator": "crossover",
+      "parent_ids": [
+        "rs-20260831T062638Z-939b7000-008",
+        "rs-20260831T062638Z-939b7000-007"
+      ],
+      "research_family": "ensemble",
+      "mechanism_tags": [
+        "heterogeneous_data_ensemble",
+        "tiered_variance_filtering",
+        "capacity_control",
+        "latent_dimension_scaling",
+        "swa"
+      ],
+      "changed_axes": [
+        "ensembling",
+        "model_capacity",
+        "regularization"
+      ],
+      "hypothesis": "Fusing Parent A's catalog-balanced 2/2/4 tier allocation with Parent B's multi-granularity tier parameterization\u2014extended to tier-adaptive latent embedding dimension k (k=8 for Strict tot>=3, k=16 for Moderate tot>=2, k=32 for Full catalog)\u2014will allow Full catalog models to capture rich higher-order sparse feature interactions while preventing overfitting on variance-filtered subsets, pushing validation primary beyond 0.60290.",
+      "used_lab_ranking_machinery": false,
+      "status": "success",
+      "primary": 0.602774370553522,
+      "GAUC": 0.6689573031999283,
+      "nDCG@5": 0.5365914379071158,
+      "delta_vs_frozen_swa7": 0.0004557379133114381,
+      "wall_seconds": 211.8550649999961,
+      "failure": null
+    }
+  ],
+  "best_candidate": {
+    "experiment_id": "rs-20260831T062638Z-939b7000-008",
+    "mechanism": "8-member FM ensemble with top-2 checkpoint SWA per member, probability mean. Members split across three tiers differing in train-row selection AND L2: 2x strict (users with >=3 impressions and mixed labels, l2=1e-4), 2x moderate (>=2 impressions and mixed labels, l2=1e-5), 4x full train split (l2=1e-6).",
+    "discovered_by": "autonomous crossover of 007 x 006; no human supplied any tier, L2 or allocation value",
+    "repo_entrypoint": "src/research_agent/recommenders/tiered_ensemble_scorer.py",
+    "repo_spec": "configs/experiments/tiered_ensemble_valid.json",
+    "seed": 42,
+    "primary": 0.6029037142533181,
+    "GAUC": 0.6690881485589812,
+    "nDCG@5": 0.536719279947655,
+    "wall_seconds": 183.68912139999156,
+    "mechanism_executed": true,
+    "mechanism_execution_evidence": "stdout shows 8 distinct members training with three different l2 values and two filtered row counts (1129780 and 1130240 of 1141112), each early-stopping at a different epoch."
+  },
+  "reproduction": {
+    "type_a_same_seed": {
+      "experiment_id": "sprint2-008-rerun",
+      "primary": 0.6029037142533181,
+      "bitwise_identical_to_live_elite": true
+    },
+    "repo_copy": {
+      "experiment_id": "sprint2-tiered-ensemble",
+      "primary": 0.6029037142533181,
+      "bitwise_identical_to_live_elite": true,
+      "wall_seconds": 173.87616769998567
+    },
+    "type_b_different_seeds": [
+      {
+        "seed": 42,
+        "primary": 0.6029037142533181
+      },
+      {
+        "seed": 7,
+        "primary": 0.602983849040599
+      },
+      {
+        "seed": 2024,
+        "primary": 0.6031161217212104
+      }
+    ],
+    "type_b_note": "All three seeds beat the frozen SWA7 elite (0.6023186); the worst is +0.000585. Seed 42 is kept because it is the agent's own choice. Selecting seed 2024 after seeing the sweep would be selection across replicates."
+  },
+  "paired_user_bootstrap": {
+    "method": "Resample validation users with replacement, rescore both models on the same resampled users, take the difference. 2000 reps, seed 7. scripts/paired_bootstrap.py.",
+    "vs_frozen_swa7": {
+      "split": "valid",
+      "users": 22377,
+      "rows": 124909,
+      "reps": 2000,
+      "seed": 7,
+      "frozen SWA7": 0.6023186326402118,
+      "sprint2 008": 0.6029037142533193,
+      "delta": 0.000585081613107552,
+      "paired_bootstrap_sd": 0.00046878690691677064,
+      "ci95_low": -0.0003427019743273141,
+      "ci95_high": 0.0015006563278528577,
+      "p_delta_gt_0": 0.888
+    },
+    "vs_fm_root": {
+      "split": "valid",
+      "users": 22377,
+      "rows": 124909,
+      "reps": 2000,
+      "seed": 7,
+      "fm-root": 0.6014687563529597,
+      "sprint2 008": 0.6029037142533193,
+      "delta": 0.0014349579003596347,
+      "paired_bootstrap_sd": 0.0006087429255252255,
+      "ci95_low": 0.00025771810506795,
+      "ci95_high": 0.0026169210124425525,
+      "p_delta_gt_0": 0.99
+    },
+    "reference_swa7_vs_fm_root": {
+      "delta": 0.0008499,
+      "ci95_low": -0.0002086,
+      "ci95_high": 0.0018664,
+      "p_delta_gt_0": 0.934,
+      "note": "Recomputed here for comparison: the incumbent's own gain over fm-root also fails 95%."
+    }
+  },
+  "statistical_significance_claimed": false,
+  "interpretation": "008 is the best validation candidate and is significantly better than the FM root under a paired user bootstrap (P=0.990, CI excludes zero), which the incumbent SWA7 is not (P=0.934, CI includes zero). Against the incumbent itself the gain is +0.000585 with P=0.888 and a CI that includes zero, so it is better on this validation set at every seed tried but not proven to generalize to a differently sampled user population.",
+  "test_policy": "TEST IS SEALED. No test split was loaded, scored or inspected during this sprint."
+}

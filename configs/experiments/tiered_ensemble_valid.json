@@ -1,0 +1,29 @@
+{
+  "experiment_id": "sprint2-tiered-ensemble",
+  "parent_ids": [
+    "rs-20260831T062638Z-939b7000-007",
+    "rs-20260831T062638Z-939b7000-006"
+  ],
+  "hypothesis": "Split an 8-member SWA FM ensemble across three tiers that differ in both train-row selection (strict / moderate within-user variance filtering / full) and L2 strength, allocating half the members to the full catalog to protect nDCG@5.",
+  "rationale": "Autonomous sprint-2 live elite rs-20260831T062638Z-939b7000-008 (crossover of 007 x 006). Validation primary 0.6029037, reproduced bitwise and stable across three seeds. Test sealed; this spec never runs on test.",
+  "origin": "crossover",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/tiered_ensemble_scorer.py"
+  },
+  "parameters": {},
+  "seed": 42,
+  "evaluation_split": "valid",
+  "timeout_seconds": 1800,
+  "allow_test_split": false,
+  "tags": [
+    "sprint2",
+    "autonomous",
+    "family:ensemble",
+    "axis:regularization",
+    "axis:training_data_selection",
+    "mech:heterogeneous_data_ensemble",
+    "mech:tiered_variance_filtering",
+    "mech:capacity_control"
+  ],
+  "notes": "Seed 42 is the agent's own choice and is kept deliberately: seeds 7 and 2024 scored higher on validation, and picking them after the fact would be selection across replicates. All tier settings come from the agent, not from a human."
+}

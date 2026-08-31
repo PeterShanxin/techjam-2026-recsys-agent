@@ -63,6 +63,30 @@ flowchart TB
   WIN --> X006
 ```
 
+### Sprint 2 — after an independent audit of the search space
+
+An independent second-opinion review found three blind spots (regularization and the
+training objective were unreachable, `parent + alpha * residual` was a degenerate safe
+hill-climb, and blank diversity metadata had silently disabled duplicate suppression and
+crossover) plus a runtime bug that made every ranking-objective attempt time out rather
+than produce evidence. After fixing those, one further autonomous sprint ran with the
+frozen 0.6023186 candidate as a starting prior.
+
+| Method | New evals | Best primary | Δ vs FM root | Δ vs frozen elite |
+| --- | --- | --- | --- | --- |
+| Sprint 2 evolutionary search | 7 | **0.6029037** | +0.0014350 | +0.0005851 |
+
+Stopped on **convergence**, not budget. 46 min, 0 GPU, 0 manual interventions. The agent
+independently reached the regularization and training-objective axes; the winner is an
+8-member FM ensemble tiered by train-row selection *and* L2 strength.
+
+Paired user bootstrap (2000 reps): vs FM root **P(Δ>0)=0.990, CI [+0.00026, +0.00262]** —
+the first candidate here that clears 95% against the root. Against the frozen elite,
+P=0.888 with a CI that includes zero, so no significance is claimed there.
+
+Details: [`docs/SECOND_OPINION_SPRINT.md`](docs/SECOND_OPINION_SPRINT.md). The Phase 5
+submission candidate and `submission.csv` are unchanged pending a human decision.
+
 ## Reproduce
 
 ```powershell
@@ -98,6 +122,7 @@ Do not use test scores to select experiments. `submission.csv` is gitignored.
 - Crossover did not beat the best mutation in the first live pilot.
 - Gemini 3.7 Flash was capacity-blocked on the Developer API; live evidence used 3.6 Flash. That is provider resilience, not hidden human steering.
 - Longer search might find more. We did not burn a 6-hour run for a likely still-sub-epsilon gain. The software still enforces 50 evals / 6h / ε=0.002 / patience=3.
+- Validation itself is noisy: bootstrapping users gives an absolute primary SD of ~0.0022, about the size of organizer ε. Paired against a shared baseline it is ~0.0005. Sprint 2's +0.00059 over the frozen elite beats it at every seed tried but its paired interval still includes zero.
 
 The contribution is the **auditable research system**, not a huge leaderboard jump.
 
@@ -114,5 +139,8 @@ The contribution is the **auditable research system**, not a huge leaderboard ju
 | Devpost draft | [`docs/DEVPOST.md`](docs/DEVPOST.md) |
 | Submission checklist | [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md) |
 | Testing | [`docs/TESTING_INSTRUCTIONS.md`](docs/TESTING_INSTRUCTIONS.md) |
+| P0 sprint | [`docs/PERFORMANCE_SPRINT.md`](docs/PERFORMANCE_SPRINT.md) |
+| Second-opinion audit + sprint 2 | [`docs/SECOND_OPINION_SPRINT.md`](docs/SECOND_OPINION_SPRINT.md) |
+| Research-space audit | [`docs/RESEARCH_SPACE_AUDIT.md`](docs/RESEARCH_SPACE_AUDIT.md) |
 
 Official starter: `starter/kuairand/` (organizer files; do not edit `evaluate.py`). Fingerprint: `ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de`.

@@ -59,7 +59,9 @@ def _primary(ndcg: np.ndarray, gauc: np.ndarray, weight: np.ndarray, pick: np.nd
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Paired user bootstrap on the validation split.")
+    ap = argparse.ArgumentParser(
+        description="Paired user bootstrap. Validation by default; test needs --allow-test."
+    )
     ap.add_argument("--baseline", required=True)
     ap.add_argument("--split", default=RESEARCH_SPLIT, choices=("valid", "test"))
     ap.add_argument(

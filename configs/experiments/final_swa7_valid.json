@@ -1,0 +1,26 @@
+{
+  "experiment_id": "final-swa7-ensemble",
+  "parent_ids": ["rs-20260830T133522Z-0e304128-003"],
+  "hypothesis": "Average raw FM probabilities from seven seeds after intra-seed averaging of the top-2 validation-primary checkpoints.",
+  "rationale": "Phase 4 matched evolutionary search selected this mechanism on validation. Frozen for submission; test is not used for selection.",
+  "origin": "mutation",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/fm_swa7_ensemble_scorer.py"
+  },
+  "parameters": {
+    "k": 16,
+    "lr": 0.001,
+    "epochs": 40,
+    "batch": 8192,
+    "patience": 4,
+    "l2": 1e-6,
+    "num_models": 7,
+    "top_k_checkpoints": 2
+  },
+  "seed": 0,
+  "evaluation_split": "valid",
+  "timeout_seconds": 1800,
+  "allow_test_split": false,
+  "tags": ["phase5", "final", "family:ensemble", "mech:swa", "mech:bagging"],
+  "notes": "Canonical repo copy of the Phase 4 SWA + 7-seed winner."
+}

@@ -1,0 +1,17 @@
+{
+  "population_size": 4,
+  "elite_count": 2,
+  "generations": 50,
+  "max_new_evaluations": 50,
+  "include_ensemble_seed": true,
+  "fill_to_size_on_init": true,
+  "wall_clock_seconds": 21600,
+  "convergence_epsilon": 0.002,
+  "convergence_patience": 3,
+  "efficiency_penalty": 0.0,
+  "prefer_crossover_from_generation": 2,
+  "max_repairs": 2,
+  "experiment_timeout_seconds": 1800,
+  "evaluation_split": "valid",
+  "notes": "Official Track 2 search envelope. Do not spend this budget unless the run has clear submission value. Dry-run with FakeProvider."
+}

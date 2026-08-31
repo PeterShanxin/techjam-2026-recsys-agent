@@ -1,0 +1,23 @@
+{
+  "os": "Windows 11 (build 26200)",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "architecture": "ARM64",
+  "python": "3.14.2",
+  "python_implementation": "CPython",
+  "numpy": "2.5.2",
+  "torch_installed": false,
+  "gpu_hours": 0,
+  "evaluate_py_sha256": "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de",
+  "dataset": "KuaiRand-Pure (not committed)",
+  "split_sizes": {
+    "train": 1141112,
+    "valid": 124909,
+    "test": 170588
+  },
+  "live_elite_environment": {
+    "experiment_id": "rs-20260830T133522Z-0e304128-004",
+    "evaluate_py_sha256": "ecfde28392eb14fec4f488083251df50624e1af2b86278b962daecfb42d195de",
+    "numpy": "2.5.2",
+    "python": "3.14.2"
+  }
+}

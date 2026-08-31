@@ -1,7 +1,13 @@
 """Pilot and competition-representable evolution budgets."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from typing import Any, Mapping
+
+COMPETITION_MAX_EVALUATIONS = 50
+COMPETITION_WALL_SECONDS = 6 * 3600.0
+COMPETITION_EPSILON = 0.002
+COMPETITION_PATIENCE = 3
 
 
 @dataclass(frozen=True)
@@ -36,3 +42,29 @@ class EvolutionConfig:
     @property
     def offspring_per_generation(self) -> int:
         return max(1, self.population_size - self.elite_count)
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any]) -> "EvolutionConfig":
+        allowed = {item.name for item in fields(cls)}
+        payload = {key: value for key, value in dict(data).items() if key in allowed}
+        return cls(**payload)
+
+    @classmethod
+    def competition(cls, **overrides: Any) -> "EvolutionConfig":
+        payload = {
+            "population_size": 4,
+            "elite_count": 2,
+            "generations": COMPETITION_MAX_EVALUATIONS,
+            "max_new_evaluations": COMPETITION_MAX_EVALUATIONS,
+            "include_ensemble_seed": True,
+            "fill_to_size_on_init": True,
+            "wall_clock_seconds": COMPETITION_WALL_SECONDS,
+            "convergence_epsilon": COMPETITION_EPSILON,
+            "convergence_patience": COMPETITION_PATIENCE,
+            "efficiency_penalty": 0.0,
+            "prefer_crossover_from_generation": 2,
+            "max_repairs": 2,
+            "experiment_timeout_seconds": 1800.0,
+        }
+        payload.update(overrides)
+        return cls(**payload)

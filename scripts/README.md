@@ -39,3 +39,22 @@ Requires `GEMINI_API_KEY` in the process environment or repo-root `.env`. Unit t
 ```
 
 Deterministic population/fitness/elitism. Gemini only proposes semantic mutation/crossover. Details: [`docs/EVOLUTION.md`](../docs/EVOLUTION.md).
+
+Competition envelope (50 evals, 6h, ε=0.002, patience=3). FakeProvider spends no API money:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_evolution.py --provider fake --competition
+```
+
+## Frozen final candidate
+
+In-repo copy of the Phase 4 winner. Not a gitignored `runs/generated/` path.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split valid
+.\.venv\Scripts\python.exe scripts\run_final_candidate.py --split test --allow-test
+.\.venv\Scripts\python.exe scripts\make_submission.py --scores runs\final-swa7-ensemble-test\scores.npy --split test --output submission.csv
+```
+
+Test split is submission-only. `--allow-test` does not feed elite ranking. `submission.csv` is gitignored.
+

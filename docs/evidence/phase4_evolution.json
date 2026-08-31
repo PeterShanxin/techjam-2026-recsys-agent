@@ -1,0 +1,95 @@
+{
+  "session_id": "rs-20260830T133522Z-0e304128",
+  "model": "gemini-3.6-flash",
+  "thinking_level": "medium",
+  "stop_reason": "generation_limit",
+  "evaluated_offspring": 6,
+  "starting_priors": ["fm-root", "fm-ensemble-3seed"],
+  "best": {
+    "experiment_id": "rs-20260830T133522Z-0e304128-004",
+    "origin": "mutation",
+    "parent_ids": ["rs-20260830T133522Z-0e304128-003"],
+    "GAUC": 0.6683660080655603,
+    "nDCG@5": 0.5362712572148608,
+    "primary": 0.6023186326402106,
+    "runtime_seconds": 383.35770449999836,
+    "mechanism": "raw probability average of 7 FM seeds; top-2 checkpoint SWA per seed"
+  },
+  "starting_elite": {
+    "experiment_id": "fm-ensemble-3seed",
+    "primary": 0.6021109230359711
+  },
+  "fm_root": {
+    "experiment_id": "fm-root",
+    "primary": 0.601468756352959
+  },
+  "children": [
+    {
+      "experiment_id": "rs-20260830T133522Z-0e304128-001",
+      "origin": "mutation",
+      "validity": "hypothesis_tested",
+      "primary": 0.5532043358149115,
+      "note": "logit-space 5-seed average; valid negative vs elite"
+    },
+    {
+      "experiment_id": "rs-20260830T133522Z-0e304128-002",
+      "origin": "mutation",
+      "validity": "hypothesis_tested",
+      "primary": 0.5883723256866935,
+      "note": "soft labels from raw CSVs; valid negative"
+    },
+    {
+      "experiment_id": "rs-20260830T133522Z-0e304128-003",
+      "origin": "mutation",
+      "validity": "hypothesis_tested",
+      "primary": 0.6019012955453522,
+      "note": "percentile-rank averaging; parent of the winner"
+    },
+    {
+      "experiment_id": "rs-20260830T133522Z-0e304128-004",
+      "origin": "mutation",
+      "validity": "hypothesis_tested",
+      "primary": 0.6023186326402106,
+      "selection": "elite"
+    },
+    {
+      "experiment_id": "rs-20260830T133522Z-0e304128-005",
+      "origin": "crossover",
+      "validity": "implementation_failure",
+      "scientific_evidence": false,
+      "note": "np.random.defaultrng typo; not elite"
+    },
+    {
+      "experiment_id": "rs-20260830T133522Z-0e304128-006",
+      "origin": "crossover",
+      "validity": "hypothesis_tested",
+      "primary": 0.6020235919409607,
+      "note": "crossover worse than mutation 004"
+    }
+  ],
+  "resources": {
+    "llm_calls": 6,
+    "research_calls": 6,
+    "repair_calls": 0,
+    "mutation_calls": 4,
+    "crossover_calls": 2,
+    "input_tokens": 91544,
+    "output_tokens": 15745,
+    "thinking_tokens": 32541,
+    "cached_tokens": 7771,
+    "total_tokens": 139830,
+    "llm_latency_seconds": 386.7238608000007,
+    "experiment_runtime_seconds": 1546.422752100003,
+    "research_wall_seconds": 1984.5237082999993,
+    "completed_experiments": 6,
+    "failed_experiments": 1,
+    "manual_interventions": 0,
+    "transport_retries": 0
+  },
+  "config": {
+    "population_size": 4,
+    "elite_count": 2,
+    "generations": 2,
+    "max_new_evaluations": 6
+  }
+}

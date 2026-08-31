@@ -1,0 +1,26 @@
+{
+  "experiment_id": "final-swa7-ensemble-test",
+  "parent_ids": ["rs-20260830T133522Z-0e304128-003"],
+  "hypothesis": "Average raw FM probabilities from seven seeds after intra-seed averaging of the top-2 validation-primary checkpoints.",
+  "rationale": "Frozen validation-selected candidate. Test scores are for the official CSV only and must not be used to pick experiments.",
+  "origin": "mutation",
+  "implementation": {
+    "entrypoint": "src/research_agent/recommenders/fm_swa7_ensemble_scorer.py"
+  },
+  "parameters": {
+    "k": 16,
+    "lr": 0.001,
+    "epochs": 40,
+    "batch": 8192,
+    "patience": 4,
+    "l2": 1e-6,
+    "num_models": 7,
+    "top_k_checkpoints": 2
+  },
+  "seed": 0,
+  "evaluation_split": "test",
+  "timeout_seconds": 1800,
+  "allow_test_split": true,
+  "tags": ["phase5", "final", "submission", "family:ensemble"],
+  "notes": "Final submission scoring only. Requires scripts/run_experiment.py --allow-test."
+}

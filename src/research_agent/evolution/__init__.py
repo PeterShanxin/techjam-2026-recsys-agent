@@ -1,6 +1,12 @@
 """Evolution Controller: deterministic survival, diversity, budgets."""
 
-from .config import EvolutionConfig
+from .config import (
+    COMPETITION_EPSILON,
+    COMPETITION_MAX_EVALUATIONS,
+    COMPETITION_PATIENCE,
+    COMPETITION_WALL_SECONDS,
+    EvolutionConfig,
+)
 from .controller import EvolutionController
 from .diversity import duplicate_reason, semantic_signature
 from .fitness import compute_fitness, is_elite_eligible, rank_members, select_elites
@@ -9,6 +15,10 @@ from .seeds import ENSEMBLE_SEED_ID, MATCHED_STARTING_SEED_IDS, ensemble_seed_sp
 from .types import EvolutionRun, GenerationRecord, Population, PopulationMember, SelectionDecision
 
 __all__ = [
+    "COMPETITION_EPSILON",
+    "COMPETITION_MAX_EVALUATIONS",
+    "COMPETITION_PATIENCE",
+    "COMPETITION_WALL_SECONDS",
     "MATCHED_STARTING_SEED_IDS",
     "ENSEMBLE_SEED_ID",
     "EvolutionConfig",

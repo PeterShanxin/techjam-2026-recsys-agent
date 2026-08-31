@@ -205,3 +205,7 @@ See [`docs/EVOLUTION.md`](EVOLUTION.md).
 
 Deterministic population, fitness, elitism, diversity, budgets, and semantic mutation/crossover via the Research Agent. Not brute-force AutoML.
 
+### Phase 5 submission freeze (implemented)
+
+See [`docs/SUBMISSION_CHECKLIST.md`](SUBMISSION_CHECKLIST.md) and [`docs/evidence/`](evidence/). Final candidate is the in-repo SWA + 7-seed scorer. Test split is opt-in CSV packing only.
+

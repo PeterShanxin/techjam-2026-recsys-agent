@@ -1,0 +1,41 @@
+{
+  "session_id": "rs-20260830T150739Z-59709f9d",
+  "model": "gemini-3.6-flash",
+  "thinking_level": "medium",
+  "starting_priors": ["fm-root", "fm-ensemble-3seed"],
+  "new_evaluations": 6,
+  "fairness": "Same Generation-0 priors as evolution. Ensemble is prior knowledge, not one of the six new evaluations. Independent registry; evolution-only child 004 was not visible.",
+  "best": {
+    "experiment_id": "fm-ensemble-3seed",
+    "GAUC": 0.6680555234218579,
+    "nDCG@5": 0.5361663226500843,
+    "primary": 0.6021109230359711
+  },
+  "improvement_vs_starting_elite": 0.0,
+  "improvement_vs_fm": 0.0006421666830120909,
+  "iterations": [
+    "rs-20260830T150739Z-59709f9d-001",
+    "rs-20260830T150739Z-59709f9d-002",
+    "rs-20260830T150739Z-59709f9d-003",
+    "rs-20260830T150739Z-59709f9d-004",
+    "rs-20260830T150739Z-59709f9d-005",
+    "rs-20260830T150739Z-59709f9d-006"
+  ],
+  "resources": {
+    "llm_calls": 6,
+    "research_calls": 6,
+    "repair_calls": 0,
+    "input_tokens": 59612,
+    "output_tokens": 17165,
+    "thinking_tokens": 47259,
+    "cached_tokens": 0,
+    "total_tokens": 124036,
+    "llm_latency_seconds": 556.9034984999962,
+    "experiment_runtime_seconds": 1943.1852519999993,
+    "research_wall_seconds": 2491.4968597000006,
+    "completed_experiments": 6,
+    "failed_experiments": 1,
+    "manual_interventions": 0,
+    "transport_retries": 0
+  }
+}

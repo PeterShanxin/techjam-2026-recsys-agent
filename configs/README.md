@@ -1,6 +1,6 @@
 # Configs
 
-Declarative experiment specs live in `experiments/`. Sequential research settings live in `research/`.
+Declarative experiment specs live in `experiments/`. Sequential and evolutionary research settings live in `research/`.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_experiment.py --spec configs\experiments\random_valid.json

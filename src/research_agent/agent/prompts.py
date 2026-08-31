@@ -20,6 +20,7 @@ Write a COMPLETE replacement Python candidate that:
 - may use evaluate() only as a training diagnostic (e.g. early stopping), never as the reported result
 - must not write to evaluate.py or other repo source files
 - must stay inside ResearchState.environment. Do not import torch or other unsupported packages
+- must honor ResearchState.data_contract. data.load() tuples do not include is_like, play_time_ms, or other aux log columns. If the mechanism needs those fields, read the raw CSVs. If the fields are unavailable, do not claim the mechanism ran
 - if the proposed method cannot execute, fail explicitly. Never catch ImportError and silently train FM, the parent, or another algorithm, then report those scores as the hypothesis result
 
 Prefer one meaningful research mutation versus the parent source.

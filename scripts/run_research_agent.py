@@ -15,6 +15,7 @@ if str(ROOT / "src") not in sys.path:
 
 from research_agent.agent import ResearchAgent, UnusableRootError
 from research_agent.agent.constants import DEFAULT_RESEARCH_MODEL, DEFAULT_THINKING_LEVEL
+from research_agent.evolution.seeds import ensure_matched_starting_seeds
 from research_agent.experiments import ExperimentRunner
 from research_agent.llm import (
     FakeProvider,
@@ -121,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-repairs", type=int, default=2)
     ap.add_argument("--manual-interventions", type=int, default=0)
     ap.add_argument(
+        "--with-ensemble-prior",
+        action="store_true",
+        help="Insert verified fm-ensemble-3seed before sequential search. Does not count as a new evaluation.",
+    )
+    ap.add_argument(
         "--provider",
         default="gemini",
         choices=("gemini", "fake"),
@@ -168,6 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"session     {agent.session_id}")
     try:
+        if args.with_ensemble_prior:
+            print("priors      fm-root + fm-ensemble-3seed (not counted as new evaluations)")
+            ensure_matched_starting_seeds(agent)
         run = agent.run()
     except (LLMConfigError, LLMAuthError, LLMRateLimitError, LLMTransientError, LLMProtocolError, UnusableRootError) as exc:
         print(redact_text(str(exc)), file=sys.stderr)

@@ -7,8 +7,10 @@ import re
 import sys
 import sysconfig
 from pathlib import Path
+from typing import Any
 
 from .constants import CANDIDATE_FILENAME
+from .data_contract import DataContract, claimed_unavailable_fields
 from .environment import EnvironmentCapabilities, discover_environment
 
 CLI_FLAGS = ("--data-dir", "--split", "--output-scores", "--seed", "--config")
@@ -92,6 +94,8 @@ def validate_candidate_source(
     workspace_root: Path,
     *,
     environment: EnvironmentCapabilities | None = None,
+    proposal: Any | None = None,
+    data_contract: DataContract | None = None,
 ) -> ast.AST:
     if not source or not source.strip():
         raise SafetyError("candidate_source is empty")
@@ -102,6 +106,20 @@ def validate_candidate_source(
     env = environment or discover_environment()
     assert_no_silent_dependency_fallback(tree, env)
     assert_allowed_imports(tree, env)
+    if data_contract is not None:
+        mapping = None
+        if proposal is not None:
+            mapping = proposal.to_dict() if hasattr(proposal, "to_dict") else dict(proposal)
+        missing = claimed_unavailable_fields(
+            proposal=mapping,
+            source=source,
+            contract=data_contract,
+        )
+        if missing:
+            raise SafetyError(
+                f"unavailable_data_field: {list(missing)}. "
+                "data.load() tuples do not include these columns."
+            )
     return tree
 
 

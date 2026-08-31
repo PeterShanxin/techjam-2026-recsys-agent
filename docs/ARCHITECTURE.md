@@ -197,9 +197,11 @@ Default and autonomous-search split is `valid`. Test requires `allow_test_split`
 
 See [`docs/RESEARCH_AGENT.md`](RESEARCH_AGENT.md).
 
-Gemini 3.7 Flash (Interactions REST, `urllib`) owns one structured research call per iteration: reflection plus the next candidate source. The Phase 2 runner/registry/evaluator stay deterministic. Repair calls are bounded and counted. Evolutionary population search is Phase 4.
+Gemini owns structured research calls. The Phase 2 runner/registry/evaluator stay deterministic. Repair calls are bounded and counted.
 
-### Still later
+### Phase 4 Evolution Controller (implemented)
 
-- Evolution Controller, population, diversity, semantic crossover (Phase 4)
+See [`docs/EVOLUTION.md`](EVOLUTION.md).
+
+Deterministic population, fitness, elitism, diversity, budgets, and semantic mutation/crossover via the Research Agent. Not brute-force AutoML.
 

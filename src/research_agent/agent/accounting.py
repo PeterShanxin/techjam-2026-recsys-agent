@@ -12,6 +12,8 @@ class ResourceLedger:
     llm_calls: int = 0
     research_calls: int = 0
     repair_calls: int = 0
+    mutation_calls: int = 0
+    crossover_calls: int = 0
     smoke_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -30,6 +32,12 @@ class ResourceLedger:
     def add_usage(self, usage: UsageRecord) -> None:
         self.llm_calls += 1
         if usage.purpose == "research":
+            self.research_calls += 1
+        elif usage.purpose == "mutation":
+            self.mutation_calls += 1
+            self.research_calls += 1
+        elif usage.purpose == "crossover":
+            self.crossover_calls += 1
             self.research_calls += 1
         elif usage.purpose == "repair":
             self.repair_calls += 1
@@ -55,6 +63,8 @@ class ResourceLedger:
             "llm_calls": self.llm_calls,
             "research_calls": self.research_calls,
             "repair_calls": self.repair_calls,
+            "mutation_calls": self.mutation_calls,
+            "crossover_calls": self.crossover_calls,
             "smoke_calls": self.smoke_calls,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,

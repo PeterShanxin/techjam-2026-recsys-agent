@@ -76,6 +76,44 @@ PROPOSAL_JSON_SCHEMA: dict[str, Any] = {
         },
         "seed": {"type": "integer"},
         "timeout_seconds": {"type": "number"},
+        "operator": {
+            "type": "string",
+            "description": "mutation, crossover, or sequential. Controller still owns parent choice.",
+        },
+        "research_family": {
+            "type": "string",
+            "description": "Short structured family such as ensemble, ranking_loss, optimization.",
+        },
+        "mechanism_tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Controlled tags for the claimed mechanism. Not free-text similarity.",
+        },
+        "changed_axes": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Research axes changed versus the parent(s).",
+        },
+        "required_data_fields": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Data fields the mechanism needs. Must exist on data.load tuples or be read from raw CSVs.",
+        },
+        "what_changed": {"type": "string"},
+        "why": {"type": "string"},
+        "evidence_motivated": {"type": "string"},
+        "would_support": {"type": "string"},
+        "would_refute": {"type": "string"},
+        "selected_parent_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Parent ids for crossover. Mutation uses selected_parent_id.",
+        },
+        "crossover_compatible": {"type": "boolean"},
+        "parent_a_component": {"type": "string"},
+        "parent_b_component": {"type": "string"},
+        "crossover_conflicts": {"type": "string"},
+        "crossover_inappropriate_reason": {"type": "string"},
     },
     "required": list(REQUIRED_STRING_FIELDS) + ["experiment_parameters"],
 }
@@ -102,6 +140,22 @@ class ResearchProposal:
     seed: int = 0
     timeout_seconds: float = 600.0
     schema_version: str = PROPOSAL_SCHEMA_VERSION
+    operator: str = "mutation"
+    research_family: str = ""
+    mechanism_tags: tuple[str, ...] = ()
+    changed_axes: tuple[str, ...] = ()
+    required_data_fields: tuple[str, ...] = ()
+    what_changed: str = ""
+    why: str = ""
+    evidence_motivated: str = ""
+    would_support: str = ""
+    would_refute: str = ""
+    selected_parent_ids: tuple[str, ...] = ()
+    crossover_compatible: bool | None = None
+    parent_a_component: str = ""
+    parent_b_component: str = ""
+    crossover_conflicts: str = ""
+    crossover_inappropriate_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return sanitize(
@@ -121,6 +175,22 @@ class ResearchProposal:
                 "abandon_or_continue_reasoning": self.abandon_or_continue_reasoning,
                 "seed": self.seed,
                 "timeout_seconds": self.timeout_seconds,
+                "operator": self.operator,
+                "research_family": self.research_family,
+                "mechanism_tags": list(self.mechanism_tags),
+                "changed_axes": list(self.changed_axes),
+                "required_data_fields": list(self.required_data_fields),
+                "what_changed": self.what_changed,
+                "why": self.why,
+                "evidence_motivated": self.evidence_motivated,
+                "would_support": self.would_support,
+                "would_refute": self.would_refute,
+                "selected_parent_ids": list(self.selected_parent_ids),
+                "crossover_compatible": self.crossover_compatible,
+                "parent_a_component": self.parent_a_component,
+                "parent_b_component": self.parent_b_component,
+                "crossover_conflicts": self.crossover_conflicts,
+                "crossover_inappropriate_reason": self.crossover_inappropriate_reason,
             }
         )
 
@@ -156,11 +226,38 @@ class ResearchProposal:
         timeout = _optional_float(data.get("timeout_seconds", 600.0), "timeout_seconds", default=600.0)
         if timeout <= 0:
             raise ProposalError("timeout_seconds must be positive")
+        operator = str(data.get("operator") or "mutation").strip().lower()
+        if operator not in {"mutation", "crossover", "sequential"}:
+            raise ProposalError("operator must be mutation, crossover, or sequential")
+        parent_ids = _optional_str_tuple(data.get("selected_parent_ids"), "selected_parent_ids")
+        for extra_parent in parent_ids:
+            if not EXPERIMENT_ID_RE.fullmatch(extra_parent):
+                raise ProposalError(f"invalid selected_parent_ids entry {extra_parent!r}")
         return cls(
             schema_version=str(data.get("schema_version", PROPOSAL_SCHEMA_VERSION)),
             experiment_parameters=dict(params),
             seed=seed,
             timeout_seconds=timeout,
+            operator=operator,
+            research_family=str(data.get("research_family") or "").strip(),
+            mechanism_tags=_optional_str_tuple(data.get("mechanism_tags"), "mechanism_tags"),
+            changed_axes=_optional_str_tuple(data.get("changed_axes"), "changed_axes"),
+            required_data_fields=_optional_str_tuple(
+                data.get("required_data_fields"), "required_data_fields"
+            ),
+            what_changed=str(data.get("what_changed") or "").strip(),
+            why=str(data.get("why") or "").strip(),
+            evidence_motivated=str(data.get("evidence_motivated") or "").strip(),
+            would_support=str(data.get("would_support") or "").strip(),
+            would_refute=str(data.get("would_refute") or "").strip(),
+            selected_parent_ids=parent_ids,
+            crossover_compatible=_optional_bool(data.get("crossover_compatible")),
+            parent_a_component=str(data.get("parent_a_component") or "").strip(),
+            parent_b_component=str(data.get("parent_b_component") or "").strip(),
+            crossover_conflicts=str(data.get("crossover_conflicts") or "").strip(),
+            crossover_inappropriate_reason=str(
+                data.get("crossover_inappropriate_reason") or ""
+            ).strip(),
             **strings,
         )
 
@@ -180,3 +277,27 @@ def _optional_float(value: Any, name: str, *, default: float) -> float:
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ProposalError(f"{name} must be a number") from exc
+
+
+def _optional_str_tuple(value: Any, name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        text = value.strip()
+        return (text,) if text else ()
+    if not isinstance(value, (list, tuple)):
+        raise ProposalError(f"{name} must be a list of strings")
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ProposalError(f"{name} must be a list of non-empty strings")
+        out.append(item.strip())
+    return tuple(out)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    raise ProposalError("crossover_compatible must be a boolean")

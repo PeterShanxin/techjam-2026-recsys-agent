@@ -12,7 +12,7 @@ The architecture is an **LLM-guided evolutionary research system**:
 - The **Evolution Controller** owns deterministic fitness, selection, elitism, diversity, lineage and resource-budget enforcement.
 - The evolutionary layer is intentionally lightweight and hypothesis-driven, not brute-force AutoML.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the frozen responsibility split and staged V1-V3 design. Phase 2 harness: [`docs/EXPERIMENT_HARNESS.md`](docs/EXPERIMENT_HARNESS.md). Phase 3 sequential agent: [`docs/RESEARCH_AGENT.md`](docs/RESEARCH_AGENT.md).
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the frozen responsibility split and staged V1-V3 design. Phase 2 harness: [`docs/EXPERIMENT_HARNESS.md`](docs/EXPERIMENT_HARNESS.md). Phase 3 sequential agent: [`docs/RESEARCH_AGENT.md`](docs/RESEARCH_AGENT.md). Phase 4 evolution: [`docs/EVOLUTION.md`](docs/EVOLUTION.md).
 
 ## Benchmark
 
@@ -63,6 +63,7 @@ python scripts/run_baseline.py --model fm --seed 0
 python scripts/run_experiment.py --spec configs/experiments/random_valid.json
 python scripts/run_experiment.py --spec configs/experiments/fm_valid.json
 python scripts/run_research_agent.py --iterations 3 --model gemini-3.7-flash --thinking medium
+python scripts/run_evolution.py --model gemini-3.6-flash --thinking medium --generations 2 --max-new-evaluations 6
 ```
 
 The dataset is intentionally not committed. See `starter/kuairand/README.md` for download instructions and [`docs/BASELINE_REPRODUCTION.md`](docs/BASELINE_REPRODUCTION.md) for the Phase 1 reproduction record.
@@ -76,8 +77,8 @@ The dataset is intentionally not committed. See `starter/kuairand/README.md` for
 - [x] Define exact experiment schema and registry
 - [x] Implement sequential autonomous research loop
 - [x] Live-validate sequential loop on KuaiRand valid (`gemini-3.6-flash`; intended model remains `gemini-3.7-flash`)
-- [ ] Add evolutionary branching
-- [ ] Add semantic crossover
+- [x] Add evolutionary branching
+- [x] Add semantic crossover
 - [ ] Run controlled benchmark experiments
 - [ ] Generate final submission checkpoint and CSV
 - [ ] Record 3-minute demo

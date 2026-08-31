@@ -165,3 +165,5 @@ All of the above are gitignored.
 ## Phase 3 notes
 
 Implemented in [`RESEARCH_AGENT.md`](RESEARCH_AGENT.md). The agent emits `ExperimentSpec` JSON and calls `ExperimentRunner.run`. Evidence comes from `ExperimentResult` plus `ExperimentRegistry.rank_validation()` / `elite()`. Generated code does not own official metrics. Search stays on `evaluation_split="valid"`.
+
+Phase 4 evolutionary search: [`EVOLUTION.md`](EVOLUTION.md). The registry remains lineage source of truth. The Evolution Controller adds fitness, elitism, and diversity on top; it does not replace the registry.

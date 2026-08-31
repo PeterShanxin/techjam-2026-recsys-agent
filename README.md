@@ -125,7 +125,22 @@ Four properties carry the boundary:
 - **The sandbox is writable or importable, never both.** Native code loaded out
   of a write root runs constructors that write with no Python event at all, so
   imports are refused when the module file, or any `sys.path` entry, is inside
-  the writable tree.
+  the writable tree -- including relative ones, which resolve against a cwd the
+  runner sets to a write root.
+- **A violation ends the process; it is never raised into candidate code.** A
+  raised exception carries `__traceback__.tb_frame`, and on 3.13+ writing that
+  frame's `f_locals` writes through to the closure cells holding the roots.
+- **Subinterpreters are refused at import.** CPython raises no audit event when
+  one is created and hooks are per-interpreter, so code inside one would run
+  with no boundary at all. The import event is the only enforcement point that
+  exists for that capability.
+
+The guard is defense in depth, not a complete sandbox: it is an in-process
+boundary at the same privilege level as the code it constrains. The guarantee
+that a candidate cannot improve its score rests on the parent-side integrity
+manifest, which is computed outside the candidate process and latches on
+violation. OS-level isolation is the right long-term answer and is out of
+scope here.
 - **The integrity baseline is latched.** It is taken once per session and never
   re-derived, so a mutation that survives one run cannot become the next run's
   accepted baseline. Once tripped, every later attempt in that session fails

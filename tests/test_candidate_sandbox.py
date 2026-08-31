@@ -22,6 +22,7 @@ from research_agent.experiments.candidate_env import (
     build_candidate_env,
     is_secret_like_name,
 )
+from research_agent.experiments.candidate_guard import VIOLATION_MARKER
 from research_agent.experiments.integrity import build_manifest, diff_manifests
 
 PLANTED_SECRETS = {
@@ -127,21 +128,28 @@ def attempt_dir_of(runner: ExperimentRunner, experiment_id: str) -> Path:
     return attempts[-1]
 
 
-def attack_error(runner: ExperimentRunner, experiment_id: str) -> str:
-    markers = list(attempt_dir_of(runner, experiment_id).rglob("attack_error.txt"))
-    return markers[0].read_text(encoding="utf-8") if markers else ""
-
-
 def candidate_output(runner: ExperimentRunner, experiment_id: str, name: str) -> Path | None:
     found = list(attempt_dir_of(runner, experiment_id).rglob(name))
     return found[0] if found else None
 
 
-def assert_blocked(error: str, label: str) -> None:
-    """SandboxViolation subclasses PermissionError; the candidate sees either name."""
-    assert "SandboxViolation" in error or "PermissionError" in error, (
-        f"{label} was not blocked by the sandbox; candidate saw: {error!r}"
+def violation_text(result) -> str:
+    path = Path(result.stderr_path)
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def assert_blocked(result, label: str) -> None:
+    """A violation ends the process, so the evidence is stderr plus a failed run.
+
+    The guard cannot raise into candidate code: an exception carries
+    `__traceback__.tb_frame`, and on 3.13+ writing that frame's f_locals
+    writes through to the closure cells holding the write roots.
+    """
+    text = violation_text(result)
+    assert VIOLATION_MARKER in text, (
+        f"{label} was not blocked by the sandbox; stderr: {text[:300]!r}"
     )
+    assert result.status != "success", f"{label} was denied but the attempt still succeeded"
 
 
 # --------------------------------------------------------------------------
@@ -236,9 +244,8 @@ def test_candidate_cannot_read_repo_dotenv(sandbox):
     result, _ = run_attack(
         sandbox, attack, experiment_id="dotenv-read", params={"repo_root": str(tmp_path)}
     )
-    assert result.status == "success"
     assert candidate_output(runner, "dotenv-read", "dotenv.txt") is None
-    assert_blocked(attack_error(runner, "dotenv-read"), "dotenv read")
+    assert_blocked(result, "dotenv read")
 
 
 # --------------------------------------------------------------------------
@@ -331,7 +338,7 @@ def test_protected_assets_survive_mutation_attempt(sandbox, name, attack):
     runner, _, _ = sandbox
     result, changes = run_attack(sandbox, attack, experiment_id=f"mut-{name}")
     assert changes == {}, f"{name} mutated protected assets: {changes}"
-    assert_blocked(attack_error(runner, f"mut-{name}"), name)
+    assert_blocked(result, name)
 
 
 def test_candidate_cannot_write_into_sibling_run_directory(sandbox):
@@ -342,8 +349,7 @@ def test_candidate_cannot_write_into_sibling_run_directory(sandbox):
     published.write_bytes(b"forged")
     """
     result, _ = run_attack(sandbox, attack, experiment_id="run-dir-write")
-    assert result.status == "success"
-    assert_blocked(attack_error(runner, "run-dir-write"), "run directory write")
+    assert_blocked(result, "run directory write")
 
 
 def test_candidate_may_write_inside_its_own_attempt_directory(sandbox):
@@ -359,7 +365,7 @@ def test_candidate_may_write_inside_its_own_attempt_directory(sandbox):
     assert result.status == "success"
     assert result.metrics is not None
     assert changes == {}
-    assert attack_error(runner, "legit-write") == ""
+    assert VIOLATION_MARKER not in violation_text(result)
     assert candidate_output(runner, "legit-write", "final.npy") is not None
 
 
@@ -546,10 +552,8 @@ def test_sandbox_escape_is_blocked(sandbox, name, attack):
     runner, _, _ = sandbox
     result, changes = run_attack(sandbox, attack, experiment_id=f"esc-{name}")
     assert changes == {}, f"{name} mutated protected assets: {changes}"
-    error = attack_error(runner, f"esc-{name}")
-    assert error, f"{name} completed without error; the escape may have succeeded"
     if name not in SELF_DEFEATING:
-        assert_blocked(error, name)
+        assert_blocked(result, name)
 
 
 def test_candidate_cannot_read_files_outside_its_sandbox(sandbox):
@@ -569,9 +573,8 @@ def test_candidate_cannot_read_files_outside_its_sandbox(sandbox):
     result, _ = run_attack(
         sandbox, attack, experiment_id="read-escape", params={"creds": str(creds)}
     )
-    assert result.status == "success"
     assert candidate_output(runner, "read-escape", "stolen.txt") is None
-    assert_blocked(attack_error(runner, "read-escape"), "host credential read")
+    assert_blocked(result, "host credential read")
 
 
 @pytest.mark.skipif(not Path("/proc").is_dir(), reason="POSIX /proc only")
@@ -582,9 +585,9 @@ def test_candidate_cannot_read_parent_process_environ(sandbox):
     blob = Path("/proc/%d/environ" % _o.getppid()).read_bytes()
     Path(cfg["output_scores"]).with_name("ppid_env.bin").write_bytes(blob)
     """
-    run_attack(sandbox, attack, experiment_id="proc-environ")
+    result, _ = run_attack(sandbox, attack, experiment_id="proc-environ")
     assert candidate_output(runner, "proc-environ", "ppid_env.bin") is None
-    assert_blocked(attack_error(runner, "proc-environ"), "/proc parent environ")
+    assert_blocked(result, "/proc parent environ")
 
 
 def test_guard_denies_unknown_audit_events_by_default():
@@ -690,7 +693,7 @@ def test_hook_closure_is_unreachable(sandbox, name, attack):
     runner, _, _ = sandbox
     result, changes = run_attack(sandbox, attack, experiment_id=f"refl-{name}")
     assert changes == {}
-    assert_blocked(attack_error(runner, f"refl-{name}"), name)
+    assert_blocked(result, name)
 
 
 NATIVE_ATTACKS = {
@@ -752,7 +755,7 @@ def test_native_code_cannot_be_loaded_from_the_sandbox(sandbox, name, attack):
         params={"donor": donor or "", "suffix": suffix},
     )
     assert changes == {}
-    assert_blocked(attack_error(runner, f"nat-{name}"), name)
+    assert_blocked(result, name)
 
 
 def test_gc_and_frame_events_are_not_allowlisted():
@@ -794,3 +797,105 @@ def test_run_fails_closed_when_the_evaluator_cannot_be_bound(tmp_path, monkeypat
     assert result.status == "invalid"
     assert result.metrics is None
     assert "could not be bound" in result.failure.message or "simulated" in result.failure.message
+
+
+# --------------------------------------------------------------------------
+# Round-3 Cursor findings: relative import origins, subinterpreters,
+# and traceback frames reaching the hook's closure
+# --------------------------------------------------------------------------
+
+ROUND3_ATTACKS = {
+    # canonical() returns None for a relative path. The import gate used to
+    # *skip* on None while `open` denied on it, and the runner sets cwd to a
+    # write root -- so a relative origin walked straight through.
+    "relative_import_origin": """
+    import importlib.machinery as _m
+    import importlib.util as _u
+    import os as _o
+    out = Path(cfg["output_scores"]).parent
+    dst = out / "blob_rel"
+    with open(cfg["donor"], "rb") as fh:
+        blob = fh.read()
+    with open(dst, "wb") as fh:
+        fh.write(blob)
+    _o.chdir(str(out))
+    loader = _m.ExtensionFileLoader("relmod", "blob_rel")
+    spec = _u.spec_from_file_location("relmod", "blob_rel", loader=loader)
+    _u.module_from_spec(spec)
+    """,
+    "relative_syspath_entry": """
+    import os as _o
+    import sys as _s
+    _o.chdir(str(Path(cfg["output_scores"]).parent))
+    _s.path.insert(0, "./")
+    import evilmod
+    """,
+    # Audit hooks are per-interpreter and are not copied into a new one, so
+    # anything run there would have no boundary at all.
+    "subinterpreter_escape": """
+    try:
+        import _interpreters as _i
+    except ImportError:
+        import _xxsubinterpreters as _i
+    interp = _i.create()
+    _i.run_string(interp, "open(r'%s', 'w').write('x')" % cfg["escape_target"])
+    """,
+}
+
+
+@pytest.mark.parametrize("name,attack", sorted(ROUND3_ATTACKS.items()))
+def test_round3_escapes_are_blocked(sandbox, name, attack):
+    runner, tmp_path, _ = sandbox
+    donor, suffix = _native_donor()
+    if donor is None:
+        donor = ""
+    result, changes = run_attack(
+        sandbox, attack, experiment_id=f"r3-{name}",
+        params={
+            "donor": donor,
+            "suffix": suffix,
+            "escape_target": str(tmp_path / "subinterp_escape.txt"),
+        },
+    )
+    assert changes == {}
+    assert not (tmp_path / "subinterp_escape.txt").exists()
+    assert_blocked(result, name)
+
+
+def test_violation_does_not_hand_a_traceback_back_to_the_candidate(sandbox):
+    """A raised violation would leak the hook's frame.
+
+    `SandboxViolation.__traceback__.tb_frame` is the hook's own frame, and on
+    3.13+ writing that frame's f_locals writes through to the closure cells
+    holding the write roots, read roots and allow list. So the guard exits the
+    process instead of raising: the except branch below must never run.
+    """
+    runner, _, protected = sandbox
+    attack = """
+    import sys as _s
+    try:
+        open(str(Path(cfg["protected"]) / ("eval" + "uate.py")), "w").write("x")
+    except BaseException as exc:
+        frames = []
+        tb = getattr(exc, "__traceback__", None)
+        while tb is not None:
+            frames.append(sorted(tb.tb_frame.f_locals))
+            tb = tb.tb_next
+        Path(cfg["output_scores"]).with_name("caught.txt").write_text(
+            repr(frames), encoding="utf-8")
+    """
+    result, changes = run_attack(sandbox, attack, experiment_id="tb-reflect")
+    assert changes == {}
+    assert candidate_output(runner, "tb-reflect", "caught.txt") is None, (
+        "candidate caught the violation and could read the hook's frame locals"
+    )
+    assert_blocked(result, "traceback reflection")
+
+
+def test_subinterpreter_and_native_namespaces_are_not_allowlisted():
+    from research_agent.experiments import candidate_guard as guard
+
+    for event in ("cpython.PyInterpreterState_New", "cpython.run_stdin",
+                  "ctypes.dlopen", "sqlite3.connect"):
+        assert event not in guard.ALLOWED_EVENTS
+        assert not event.startswith(guard.ALLOWED_PREFIXES), event

@@ -39,6 +39,11 @@ Five design points carry the security:
 
 * **Anything unresolvable is denied**, never allowed through.
 
+* **Subinterpreters are refused at import.** CPython raises no audit event
+  when one is created, and hooks are per-interpreter and not copied, so code
+  run there would have no boundary at all. The import event is the only
+  enforcement point available for that capability.
+
 * **The sandbox is writable or importable, never both.** Native code loaded
   out of a write root would run constructors that write with no Python event
   at all, so imports are refused when the module file, or any ``sys.path``
@@ -84,7 +89,10 @@ ALLOWED_EVENTS = frozenset(
     }
 )
 
-# Namespaces that are pure computation. Deliberately NOT here: `gc.`, whose
+# Namespaces that are pure computation. Deliberately NOT here: `cpython.`,
+# because `cpython.PyInterpreterState_New` creates a subinterpreter and audit
+# hooks are per-interpreter -- code run there would have no boundary at all.
+# Also deliberately NOT here: `gc.`, whose
 # get_objects/get_referrers enumerate live objects, which is enough to find
 # the hook function and assign to `hook.__closure__[i].cell_contents`. Cells
 # are writable, so that would let a candidate swap out the write roots, the
@@ -101,7 +109,6 @@ ALLOWED_PREFIXES = (
     "random.",
     "hashlib.",
     "decimal.",
-    "cpython.",
 )
 
 # event -> indices of arguments naming a path this event *writes*. Source
@@ -124,6 +131,31 @@ WRITE_PATH_ARGS = {
     "shutil.rmtree": (0,),
     "tempfile.mkstemp": (0,),
 }
+
+
+VIOLATION_EXIT_CODE = 3
+VIOLATION_MARKER = "SandboxViolation"
+
+
+# Modules denied by name. This is a name blocklist, which the rest of this
+# module argues against -- it is used here because CPython raises *no* audit
+# event for subinterpreter creation (verified on 3.14: `_interpreters.create()`
+# emits nothing), and code inside a subinterpreter runs with no audit hook at
+# all, since hooks are per-interpreter and are not copied. The import event is
+# therefore the only enforcement point, and it is a sound one: every route to
+# these modules -- direct, `importlib.import_module`, or transitively through
+# `concurrent.futures` -- raises it.
+DENIED_MODULES = frozenset(
+    {
+        "_interpreters",
+        "_xxsubinterpreters",
+        "_interpchannels",
+        "_xxinterpchannels",
+        "_interpqueues",
+        "_xxinterpqueues",
+    }
+)
+DENIED_MODULE_PATHS = ("concurrent.interpreters",)
 
 
 class SandboxViolation(PermissionError):
@@ -153,7 +185,27 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
     _allowed_events = ALLOWED_EVENTS
     _allowed_prefixes = ALLOWED_PREFIXES
     _write_path_args = WRITE_PATH_ARGS
-    _violation = SandboxViolation
+    _exit = os._exit
+    _stderr = sys.stderr
+    _denied_modules = DENIED_MODULES
+    _denied_module_paths = DENIED_MODULE_PATHS
+
+    def deny(message):
+        """End the process rather than raising into candidate code.
+
+        A raised exception carries `__traceback__.tb_frame`, and on 3.13+ a
+        frame's f_locals writes through to the closure cells behind it -- so
+        catching one violation would hand the candidate the write roots, the
+        read roots, and the allow list. Exiting removes that surface, and a
+        candidate that reaches for an escape has no legitimate recovery path
+        anyway. The runner reports the attempt as failed.
+        """
+        try:
+            _stderr.write(VIOLATION_MARKER + ": " + str(message) + os.linesep)
+            _stderr.flush()
+        except Exception:  # noqa: BLE001 - never let reporting block the exit
+            pass
+        _exit(VIOLATION_EXIT_CODE)
 
     def canonical(value):
         """Absolute, symlink-resolved, case-folded path, or None."""
@@ -217,9 +269,9 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                 return  # existing descriptor; its open() was already checked
             path = canonical(target)
             if path is None:
-                raise _violation(f"candidate may not open an unresolvable path: {target!r}")
+                deny(f"candidate may not open an unresolvable path: {target!r}")
             if contained(path, denied_reads):
-                raise _violation(f"candidate may not read {target!r}")
+                deny(f"candidate may not read {target!r}")
             mode = args[1] if len(args) > 1 else None
             flags = args[2] if len(args) > 2 else None
             writing = (_isinstance(flags, int) and flags & _write_flags) or (
@@ -227,11 +279,11 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
             )
             if writing:
                 if not contained(path, writable):
-                    raise _violation(
+                    deny(
                         f"candidate may not write outside its sandbox: {target!r}"
                     )
             elif not contained(path, readable):
-                raise _violation(f"candidate may not read outside its sandbox: {target!r}")
+                deny(f"candidate may not read outside its sandbox: {target!r}")
             return
 
         indices = _write_path_args.get(event)
@@ -244,14 +296,20 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
                     continue
                 path = canonical(value)
                 if path is None:
-                    raise _violation(f"candidate may not {event} on {value!r}")
+                    deny(f"candidate may not {event} on {value!r}")
                 if not contained(path, writable):
-                    raise _violation(
+                    deny(
                         f"candidate may not {event} outside its sandbox: {value!r}"
                     )
             return
 
         if event == "import":
+            module = args[0] if args else None
+            if _isinstance(module, str) and module:
+                if module.split(".", 1)[0] in _denied_modules or module.startswith(
+                    _denied_module_paths
+                ):
+                    deny(f"candidate may not import {module!r} (subinterpreters escape the hook)")
             # A candidate that writes a shared library into its sandbox and
             # imports it runs native constructors, which fopen/write with no
             # Python event at all. Both routes are visible here: a direct
@@ -260,18 +318,19 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
             filename = args[1] if len(args) > 1 else None
             if filename is not None:
                 loaded = canonical(filename)
-                if loaded is not None and contained(loaded, writable):
-                    raise _violation(
-                        f"candidate may not import from its writable sandbox: {filename!r}"
-                    )
+                # Fail closed: a relative origin resolves against cwd, which
+                # the runner sets to a write root, so an unresolvable module
+                # path is exactly the escape this branch exists to stop.
+                if loaded is None:
+                    deny(f"candidate may not import from a relative path: {filename!r}")
+                if contained(loaded, writable):
+                    deny(f"candidate may not import from its writable sandbox: {filename!r}")
             for entry in (args[2] if len(args) > 2 else None) or ():
-                if not entry or entry == ".":
-                    raise _violation("candidate may not import with cwd on sys.path")
-                resolved = canonical(entry)
-                if resolved is not None and contained(resolved, writable):
-                    raise _violation(
-                        f"candidate may not put a writable directory on sys.path: {entry!r}"
-                    )
+                resolved = canonical(entry) if entry else None
+                if resolved is None:
+                    deny(f"candidate may not import with a relative sys.path entry: {entry!r}")
+                if contained(resolved, writable):
+                    deny(f"candidate may not put a writable directory on sys.path: {entry!r}")
             return
 
         if event == "os.add_dll_directory":
@@ -279,12 +338,12 @@ def install_guard(write_roots, read_roots=(), deny_read_paths=()) -> None:
             # this would only ever widen the native search path.
             added = canonical(args[0]) if args else None
             if added is None or contained(added, writable):
-                raise _violation("candidate may not add a sandbox directory to the DLL path")
+                deny("candidate may not add a sandbox directory to the DLL path")
             return
 
         if event in _allowed_events or event.startswith(_allowed_prefixes):
             return
-        raise _violation(f"candidate may not use {event} (not permitted in sandbox)")
+        deny(f"candidate may not use {event} (not permitted in sandbox)")
 
     sys.addaudithook(hook)
 
